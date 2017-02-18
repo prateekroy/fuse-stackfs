@@ -26,8 +26,10 @@
 #include <glib.h>
 
 #define EXT_LEN 4
-#define QUEUE_SIZE 1
+#define CACHE_SIZE 1
 #define EXT ".bfs"
+#define TXT_EXT_LEN 4
+#define TXT_EXT ".txt"
 FILE *logfile;
 #define TESTING_XATTR 0
 #define USE_SPLICE 0
@@ -37,7 +39,13 @@ FILE *logfile;
 pthread_spinlock_t spinlock; /* Protecting the above spin lock */
 char banner[4096];
 GHashTable* file_table;
-GQueue* file_queue;
+GHashTable* file_cache;
+struct file_node{
+	char file_name[PATH_MAX];
+	struct file_node* next;
+	struct file_node* prev;
+};
+struct file_node* file_node_head, *file_node_end;
 struct file_pages{
         char file_page[PG_SIZE];
 	struct file_pages* prev_page;
@@ -334,7 +342,7 @@ static void remap_hash_table(struct lo_data *lo_data)
 	if (t->split == t->size / 2)
 		return;
 
-/* split this bucket by recalculating the hash */
+// split this bucket by recalculating the hash 
 	hash = t->split;
 	t->split++;
 
@@ -359,8 +367,8 @@ static void remap_hash_table(struct lo_data *lo_data)
 		}
 	}
 
-/* If we have reached the splitting to half of the size
- * then double the size of hash table */
+//If we have reached the splitting to half of the size
+ // then double the size of hash table 
 	if (t->split == t->size / 2)
 		hash_table_resize(t);
 }
@@ -381,7 +389,6 @@ static int insert_to_hash_table(struct lo_data *lo_data,
 
 	return 0;
 }
-
 static void hash_table_reduce(struct node_table *t)
 {
 	size_t newsize = t->size / 2;
@@ -403,7 +410,7 @@ static void remerge_hash_table(struct lo_data *lo_data)
 	struct node_table *t = &lo_data->hash_table;
 	int iter;
 
-/* This means all the hashes would be under the half size
+ /*This means all the hashes would be under the half size
  * of table (so simply make it half) */
 	if (t->split == 0)
 		hash_table_reduce(t);
@@ -457,7 +464,7 @@ static int delete_from_hash_table(struct lo_data *lo_data,
 	}
 
 del_out:
-	/* free the lo_inode  */
+	// free the lo_inode  
 	lo_inode->prev = lo_inode->next = NULL;
 	free(lo_inode->name);
 	free(lo_inode);
@@ -536,7 +543,7 @@ struct lo_inode *find_lo_inode(fuse_req_t req, struct stat *st, char *fullpath)
 		lo_inode->next = lo_inode->prev = NULL;
 
 		/* insert into hash table */
-		//res = insert_to_hash_table(lo_data, lo_inode);
+		res = insert_to_hash_table(lo_data, lo_inode);
 		if (res == -1) {
 			free(lo_inode->name);
 			free(lo_inode);
@@ -623,8 +630,10 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 
 		if (fullPath)
 			free(fullPath);
-		if (file_name)
+		if (file_name){
 			free(file_name);
+			file_name = NULL;
+		}
 
 		if (!inode)
 			fuse_reply_err(req, ENOMEM);
@@ -638,6 +647,10 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 		if (fullPath)
 			free(fullPath);
 		fuse_reply_err(req, ENOENT);
+	}
+	if(file_name !=NULL){
+		free(file_name);
+		file_name = NULL;
 	}
 }
 
@@ -853,7 +866,7 @@ static void stackfs_ll_mkdir(fuse_req_t req, fuse_ino_t parent,
 		pthread_spin_lock(&lo_data->spinlock);
 
 		res = insert_to_hash_table(lo_data, lo_inode);
-
+		
 		pthread_spin_unlock(&lo_data->spinlock);
 
 		if (res == -1) {
@@ -880,9 +893,16 @@ static void decompress_store(char * name, int fd){
 	int bytes_read = PG_SIZE;
 	char* key = (char *)malloc( sizeof(name) );
 	strcpy(key, name);
+	int offSet = 0;
 	if(!g_hash_table_contains(file_table,key)){
 		while(bytes_read==PG_SIZE){
-			bytes_read = read(fd, current->file_page, PG_SIZE);
+			bytes_read = pread(fd, current->file_page, PG_SIZE, offSet);
+			int off = 0;
+			while(off<bytes_read){
+				current->file_page[off] +=1;
+				//StackFS_trace("decompress data: %c", current->file_page[off]);
+				off++;
+			}
 			if(bytes_read == PG_SIZE){
 				current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
 				current->next_page->prev_page = current;
@@ -891,31 +911,86 @@ static void decompress_store(char * name, int fd){
 			else{
 				current->file_page[bytes_read] = '\0';
 				current->next_page = NULL;
-			} 
-			StackFS_trace("decompress data: %s", current->file_page);	
+			}
+			offSet+=bytes_read; 
+			StackFS_trace("decompress data: %s %d", current->file_page, bytes_read);	
 		}
-		StackFS_trace("Fd added : %p and fp : %p", key, fp);
 		pthread_spin_lock(&spinlock);
 		g_hash_table_insert(file_table, key, fp);
 		pthread_spin_unlock(&spinlock);
 	}else{
-		guint index = (guint)g_queue_index(file_queue,key);
-		if(index!=-1){
-			g_queue_pop_nth(file_queue, index);
+		struct file_node * fn = (struct file_node*) g_hash_table_lookup(file_cache, key);
+		if(fn!=NULL){
+			StackFS_trace("Removing from Linked list: %s", key);
+			pthread_spin_lock(&spinlock);
+                	fn->prev->next = fn->next;
+                	fn->next->prev = fn->prev;
+			g_hash_table_remove(file_cache, key);
+			free(fn);
+			fn = NULL;
+			pthread_spin_unlock(&spinlock);
 		}
-		if(key!=NULL)
+		if(key!=NULL){
 			free(key);
+			key = NULL;
+		}
 	}
+}
+
+static void compress_save(char * name){
+	char * point = NULL;
+	StackFS_trace("The file name to be saved: %s", name);
+	if((point = strrchr(name,'.')) != NULL) {
+		struct stat buffer;
+		int file_name_len = strlen(name)-strlen(point);
+		char * file_name = (char *) malloc(file_name_len+EXT_LEN+1);
+		strncpy(file_name, name, file_name_len);
+		strncpy(file_name+file_name_len, EXT, EXT_LEN);
+		file_name[file_name_len+EXT_LEN] = '\0';
+		StackFS_trace("The compressed file name : %s", file_name);
+		if(stat(file_name, &buffer) == 0) {
+			int fd = open(file_name, O_RDWR);
+			struct file_pages * fp = (struct file_pages*) g_hash_table_lookup(file_table, name);
+			struct file_pages * current = fp;
+			int offset = 0;
+			while(current!=NULL && current->next_page!=NULL){
+				int off = 0;
+				while(off<PG_SIZE){
+				  current->file_page[off] -= 1;
+				  off++;
+				}
+				offset+=pwrite(fd,current->file_page, PG_SIZE, offset);
+				StackFS_trace("The flushed page: %s", current->file_page);
+				current = current->next_page;
+			}
+			if(current!=NULL){
+				int off = 0;
+				int len = strlen(current->file_page);
+				while(off<len){
+				  current->file_page[off] -= 1;
+				  off++;
+				}
+				offset+=pwrite(fd, current->file_page, len, offset);
+				StackFS_trace("The flushed page: %s", current->file_page);
+				current = current->next_page;
+			} 
+		}
+		if(file_name!=NULL){
+			free(file_name);
+			file_name = NULL;
+		}
+	}	
 }
 
 static void safe_remove(char* name){
 	char* key = (char *)malloc( sizeof(name) );
-        strcpy(key, name);
-	StackFS_trace("File to be removed : %s", key);
+	strcpy(key, name);
+	StackFS_trace("File to be removed from cache: %s", key);
 	if(g_hash_table_contains(file_table,key)){
 		struct file_pages * fp = (struct file_pages*) g_hash_table_lookup(file_table, key);
-		StackFS_trace("File found : %s and fp : %p", key, fp);
+		StackFS_trace("File found : %s removing %p", key, fp);
 		struct file_pages * current = fp;
+		compress_save(key);
 		while(current!=NULL && current->next_page!=NULL){
 			current = current->next_page;
 		}
@@ -932,27 +1007,43 @@ static void safe_remove(char* name){
 		}
 		pthread_spin_lock(&spinlock);
 		g_hash_table_remove(file_table,key);
+		g_hash_table_remove(file_cache, key);
 		pthread_spin_unlock(&spinlock);
 	}
-	if(key!=NULL)
+	if(key!=NULL){
 		free(key);
+		key = NULL;
+	}
 }
 
-static void add_to_queue(char* name, int fd){
+static void add_to_cache(char* name, int fd){
 	char * key = (char*) malloc(sizeof(name));
 	strcpy(key, name);
-	StackFS_trace("Fd to be closed : %s", key);
-	if(g_queue_get_length (file_queue) >= QUEUE_SIZE){
-		while(g_queue_get_length (file_queue)>= QUEUE_SIZE){
-			char* rem_name = (char *)g_queue_pop_tail(file_queue);
-			safe_remove(rem_name);
-			if(rem_name!=NULL){
-				free(rem_name);
-			}
+	if(g_hash_table_size(file_cache) >= CACHE_SIZE){
+		while(g_hash_table_size (file_cache)>= CACHE_SIZE){
+			if(file_node_end->prev != file_node_head){
+				char* rem_name = file_node_end->prev->file_name;
+				safe_remove(rem_name);
+				if(file_node_end->prev!=NULL){
+					file_node_end->prev = file_node_end->prev->prev;
+					free(file_node_end->prev->next);
+					file_node_end->prev->next = file_node_end;
+				}
+			}else
+				break;
 		}
 	}
-	if(g_hash_table_contains(file_table,key) && g_queue_get_length (file_queue)<QUEUE_SIZE){
-		g_queue_push_head(file_queue, key);
+	if(g_hash_table_contains(file_table,key) && g_hash_table_size(file_cache)< CACHE_SIZE){
+		StackFS_trace("Fd to be added to cache : %s", key);
+		pthread_spin_lock(&spinlock);
+		struct file_node* fn = (struct file_node*) malloc(sizeof(struct file_node));
+		strcpy(fn->file_name, key);
+		fn->prev = file_node_head;
+		fn->next = file_node_head->next;
+		file_node_head->next = fn;
+		fn->next->prev = fn;
+		g_hash_table_insert(file_cache, key , fn);
+		pthread_spin_unlock(&spinlock);
 	}
 }
 
@@ -964,7 +1055,7 @@ static void stackfs_ll_open(fuse_req_t req, fuse_ino_t ino,
 	char * name = lo_name(req, ino);
 	char * point = NULL;
 	StackFS_trace("The file name: %s", name);
-	fi->flags |=O_CREAT;
+	fi->flags |= O_CREAT;
 	fd = open(name, fi->flags);
 	if((point = strrchr(name,'.')) != NULL) {
 		struct stat buffer;
@@ -974,10 +1065,20 @@ static void stackfs_ll_open(fuse_req_t req, fuse_ino_t ino,
 		strncpy(file_name+file_name_len, EXT, EXT_LEN);
 		file_name[file_name_len+EXT_LEN] = '\0';
 		StackFS_trace("The file name: %s", file_name);
-                if(stat(file_name, &buffer) == 0) {			
-                        decompress_store(name, open(file_name, fi->flags));
-                }
-        }
+		if(stat(file_name, &buffer) == 0) {
+			decompress_store(name, open(file_name, fi->flags));
+		}
+		/*else{
+			fd = open(name, fi->flags);
+		}*/
+		if(file_name!=NULL){
+			free(file_name);
+			file_name = NULL;	
+		}
+	/*}
+	else{
+		fd = open(name, fi->flags);*/
+	}
 	generate_end_time(req);
 	populate_time(req);
 
@@ -986,7 +1087,7 @@ static void stackfs_ll_open(fuse_req_t req, fuse_ino_t ino,
 	
 	if (fd == -1)
 		return (void) fuse_reply_err(req, errno);
-
+	
 	fi->fh = fd;
 
 	fuse_reply_open(req, fi);
@@ -1062,9 +1163,10 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 				page_no--;
 			}
 			if(current!=NULL){
-				if(end_off<PG_SIZE){
+				if(end_off<=PG_SIZE){
 					 memcpy(buf, current->file_page+offset, size);
-					 res = size;
+					 //strcpy(buf+size, '\0');
+					 res = strlen(current->file_page+offset);
 					 StackFS_trace("Data: %s", buf);
 				}else{
 					memcpy(buf, current->file_page+offset, PG_SIZE-page_off);
@@ -1086,6 +1188,7 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			}
         	}else{	
 		//clock_gettime(CLOCK_MONOTONIC, &start);
+			StackFS_trace("The file name: %s not in map", name);
 			res = pread(fi->fh, buf, size, offset);
 		}
 		//clock_gettime(CLOCK_MONOTONIC, &end);
@@ -1098,9 +1201,9 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 		//StackFS_trace("Read inode : %llu off : %lu size : %zu diff : %llu", get_lower_fuse_inode_no(req, ino), offset, size, time);
 		if (res == -1)
 			return (void) fuse_reply_err(req, errno);
-		StackFS_trace("Data: %s %d", buf, res);
 		res = fuse_reply_buf(req, buf, res);
 		free(buf);
+		buf = NULL;
 	}
 	StackFS_trace("StackFS Read end on inode : %llu", get_lower_fuse_inode_no(req, ino));
 }
@@ -1119,6 +1222,7 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 				lo_name(req, ino), lo_inode(req, ino)->ino);
 	d = lo_dirptr(fi);
 	buf = malloc(size*sizeof(char));
+	GHashTable* directory_list = g_hash_table_new(g_str_hash, g_str_equal);
 	if (!buf)
 		return (void) fuse_reply_err(req, ENOMEM);
 
@@ -1147,27 +1251,52 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 			}
 		}
 		nextoff = telldir(d->dp);
+		char* point = NULL;
+        	StackFS_trace("The file name: %s", d->entry->d_name);
+        	if((point = strrchr(d->entry->d_name,'.')) != NULL && strcmp(point, EXT)==0) {
+			int file_name_len = strlen(d->entry->d_name)-strlen(point);
+                	char * file_name = (char *) malloc(file_name_len+TXT_EXT_LEN+1);
+                	strncpy(file_name, d->entry->d_name, file_name_len);
+                	strncpy(file_name+file_name_len, TXT_EXT, TXT_EXT_LEN);
+                	file_name[file_name_len+TXT_EXT_LEN] = '\0';
+                	StackFS_trace("The file name: %s", file_name);
+			if(g_hash_table_lookup(directory_list, file_name)==NULL){
+				struct stat st = {
+                        		.st_ino = d->entry->d_ino,
+                        		.st_mode = d->entry->d_type << 12,
+                		};
+                		entsize = fuse_add_direntry(req, p, rem,
+                                        	file_name, &st, nextoff);
+				if (entsize > rem)
+		                        break;
 
-		struct stat st = {
-			.st_ino = d->entry->d_ino,
-			.st_mode = d->entry->d_type << 12,
-		};
-		entsize = fuse_add_direntry(req, p, rem,
+		                p += entsize;
+                		rem -= entsize;
+				g_hash_table_insert(directory_list, file_name, d->entry->d_name);
+			}
+		}
+		if(g_hash_table_lookup(directory_list, d->entry->d_name)==NULL){
+			struct stat st = {
+				.st_ino = d->entry->d_ino,
+				.st_mode = d->entry->d_type << 12,
+			};
+			entsize = fuse_add_direntry(req, p, rem,
 					d->entry->d_name, &st, nextoff);
 	/* The above function returns the size of the entry size even though
 	* the copy failed due to smaller buf size, so I'm checking after this
 	* function and breaking out incase we exceed the size.
 	*/
-		if (entsize > rem)
+			if (entsize > rem)
 			break;
 
-		p += entsize;
-		rem -= entsize;
-
+			p += entsize;
+			rem -= entsize;
+			g_hash_table_insert(directory_list, d->entry->d_name, d->entry->d_name);
+		}
 		d->entry = NULL;
 		d->offset = nextoff;
 	}
-
+	StackFS_trace("The list are %s", p);
 	generate_end_time(req);
 	populate_time(req);
 	fuse_reply_buf(req, buf, size - rem);
@@ -1191,7 +1320,9 @@ static void stackfs_ll_release(fuse_req_t req, fuse_ino_t ino,
 	StackFS_trace("Release called on name : %s and inode : %llu fd : %d ",
 			lo_name(req, ino), lo_inode(req, ino)->ino, fi->fh);
 	generate_start_time(req);
-	add_to_queue(lo_name(req, ino), fi->fh);
+	char * name = lo_name(req, ino);
+	if(g_hash_table_lookup(file_table, name)!=NULL && g_hash_table_lookup(file_cache, name)==NULL)
+		add_to_cache(name, fi->fh);
 	close(fi->fh);
 	generate_end_time(req);
 	populate_time(req);
@@ -1221,7 +1352,6 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 {
 	int res;
 	(void) ino;
-
 	StackFS_trace("Write name : %s, inode : %llu, off : %lu, size : %zu",
 			lo_name(req, ino), lo_inode(req, ino)->ino, off, size);
 	generate_start_time(req);
@@ -1559,7 +1689,14 @@ int main(int argc, char **argv)
 	char *resolved_rootdir_path = NULL;
 	int multithreaded;
 	file_table = g_hash_table_new(g_str_hash, g_str_equal);
-	file_queue = g_queue_new();
+	file_cache = g_hash_table_new(g_str_hash, g_str_equal);
+	file_node_head = (struct file_node*) malloc(sizeof(struct file_node));
+	file_node_head->prev = NULL;
+	file_node_end = (struct file_node*) malloc(sizeof(struct file_node));
+	file_node_end->next = NULL;
+	file_node_head->next = file_node_end;
+	file_node_end->prev = file_node_head;
+	//file_queue = g_queue_new();
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 	/*Default attr valid time is 1 sec*/
 	struct stackFS_info s_info = {NULL, NULL, 1.0, 0, 0};
@@ -1707,5 +1844,9 @@ out2:
 	if (resolved_statsDir)
 		free(resolved_statsDir);
 out1:
+	if(file_node_head !=NULL)
+		free(file_node_head);
+	if(file_node_end !=NULL)
+		free(file_node_end);
 	return res;
 }
