@@ -48,6 +48,7 @@ struct file_node{
 struct file_node* file_node_head, *file_node_end;
 struct file_pages{
         char file_page[PG_SIZE];
+	int offset;	
 	struct file_pages* prev_page;
         struct file_pages* next_page;
 };
@@ -661,12 +662,33 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 	struct stat buf;
 	(void) fi;
 	double attr_val;
-
+	char * name = lo_name(req, ino);
 	StackFS_trace("Getattr called on name : %s and inode : %llu",
 				lo_name(req, ino), lo_inode(req, ino)->ino);
 	attr_val = lo_attr_valid_time(req);
 	generate_start_time(req);
-	res = stat(lo_name(req, ino), &buf);
+	char * point = NULL;
+        StackFS_trace("The file name: %s is looked up", name);
+        if((point = strrchr(name,'.')) != NULL) {
+                struct stat buffer;
+                int file_name_len = strlen(name)-strlen(point);
+                char * file_name = (char *) malloc(file_name_len+EXT_LEN+1);
+                strncpy(file_name, name, file_name_len);
+                strncpy(file_name+file_name_len, EXT, EXT_LEN);
+                file_name[file_name_len+EXT_LEN] = '\0';
+                StackFS_trace("The file name: %s", file_name);
+                if(stat(file_name, &buffer) == 0 && strcmp(point,EXT) != 0) {
+                        res = stat(file_name, &buf);
+                }else{
+                        res = stat(name, &buf);
+                }
+		if(file_name!=NULL){
+			free(file_name);
+			file_name = NULL;	
+		}
+	}else{
+		res = stat(name, &buf);
+	}
 	generate_end_time(req);
 	populate_time(req);
 	if (res == -1)
@@ -886,35 +908,26 @@ static void stackfs_ll_mkdir(fuse_req_t req, fuse_ino_t parent,
 }
 
 static void decompress_store(char * name, int fd){
-	struct file_pages * fp = (struct file_pages*) malloc(sizeof(struct file_pages));
-	struct file_pages * current = fp;
-	fp->prev_page = NULL;
-	StackFS_trace("Fd added : %d and fp : %p", fd, fp);
-	int bytes_read = PG_SIZE;
+	int bytes_read = 0;
 	char* key = (char *)malloc( sizeof(name) );
-	strcpy(key, name);
 	int offSet = 0;
+	strcpy(key, name);
 	if(!g_hash_table_contains(file_table,key)){
-		while(bytes_read==PG_SIZE){
-			bytes_read = pread(fd, current->file_page, PG_SIZE, offSet);
-			int off = 0;
-			while(off<bytes_read){
-				current->file_page[off] +=1;
-				//StackFS_trace("decompress data: %c", current->file_page[off]);
-				off++;
-			}
-			if(bytes_read == PG_SIZE){
-				current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
-				current->next_page->prev_page = current;
-				current = current->next_page;
-			}
-			else{
-				current->file_page[bytes_read] = '\0';
-				current->next_page = NULL;
-			}
-			offSet+=bytes_read; 
-			StackFS_trace("decompress data: %s %d", current->file_page, bytes_read);	
+		struct file_pages * fp = (struct file_pages*) malloc(sizeof(struct file_pages));
+        	struct file_pages * current = fp;
+        	int off = 0;
+		fp->prev_page = NULL;
+		fp->next_page = NULL;
+		fp->offset = 0;
+		bytes_read = pread(fd, current->file_page, PG_SIZE, offSet);
+		StackFS_trace("bytes_read %d", bytes_read);
+		while(off<bytes_read){
+			current->file_page[off] +=1;
+			off++;
 		}
+		offSet+=bytes_read;
+		current->offset = offSet; 
+		StackFS_trace("decompress data: %s %d", current->file_page, bytes_read);	
 		pthread_spin_lock(&spinlock);
 		g_hash_table_insert(file_table, key, fp);
 		pthread_spin_unlock(&spinlock);
@@ -923,8 +936,8 @@ static void decompress_store(char * name, int fd){
 		if(fn!=NULL){
 			StackFS_trace("Removing from Linked list: %s", key);
 			pthread_spin_lock(&spinlock);
-                	fn->prev->next = fn->next;
-                	fn->next->prev = fn->prev;
+			fn->prev->next = fn->next;
+			fn->next->prev = fn->prev;
 			g_hash_table_remove(file_cache, key);
 			free(fn);
 			fn = NULL;
@@ -1046,7 +1059,24 @@ static void add_to_cache(char* name, int fd){
 		pthread_spin_unlock(&spinlock);
 	}
 }
-
+/*
+static char* name_to_compressed_file_name(char* name){
+	char * point = NULL;
+        StackFS_trace("The file name to be converted: %s", name);
+        if((point = strrchr(name,'.')) != NULL) {
+                struct stat buffer;
+                int file_name_len = strlen(name)-strlen(point);
+                char * file_name = (char *) malloc(file_name_len+EXT_LEN+1);
+                strncpy(file_name, name, file_name_len);
+                strncpy(file_name+file_name_len, EXT, EXT_LEN);
+                file_name[file_name_len+EXT_LEN] = '\0';
+                StackFS_trace("The converted file name: %s", file_name);
+                if(stat(file_name, &buffer) == 0) {
+                        return file_name;
+		}
+	}
+	return NULL;
+}*/
 static void stackfs_ll_open(fuse_req_t req, fuse_ino_t ino,
 					struct fuse_file_info *fi)
 {
@@ -1055,8 +1085,8 @@ static void stackfs_ll_open(fuse_req_t req, fuse_ino_t ino,
 	char * name = lo_name(req, ino);
 	char * point = NULL;
 	StackFS_trace("The file name: %s", name);
-	fi->flags |= O_CREAT;
-	fd = open(name, fi->flags);
+	//fi->flags |= O_CREAT;
+	//fd = open(name, fi->flags);
 	if((point = strrchr(name,'.')) != NULL) {
 		struct stat buffer;
 		int file_name_len = strlen(name)-strlen(point);
@@ -1066,18 +1096,19 @@ static void stackfs_ll_open(fuse_req_t req, fuse_ino_t ino,
 		file_name[file_name_len+EXT_LEN] = '\0';
 		StackFS_trace("The file name: %s", file_name);
 		if(stat(file_name, &buffer) == 0) {
-			decompress_store(name, open(file_name, fi->flags));
+			fd = open(file_name, fi->flags);
+			decompress_store(name, fd);
 		}
-		/*else{
+		else{
 			fd = open(name, fi->flags);
-		}*/
+		}
 		if(file_name!=NULL){
 			free(file_name);
 			file_name = NULL;	
 		}
-	/*}
+	}
 	else{
-		fd = open(name, fi->flags);*/
+		fd = open(name, fi->flags);
 	}
 	generate_end_time(req);
 	populate_time(req);
@@ -1151,38 +1182,85 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 		buf = (char *)malloc(size);
 		generate_start_time(req);
 		char * name = lo_name(req, ino);
-		if(g_hash_table_contains(file_table,name)) {
+		int fd = 0;
+		if(g_hash_table_contains(file_table,name)){//||g_hash_table_contains(file_cache,name)) {
+			/*if(g_hash_table_contains(file_cache,name)){
+				fd = decompress(name);
+			}*/
 			struct file_pages* fp = g_hash_table_lookup (file_table, name);
 			struct file_pages* current = fp;
+			struct file_pages* start = fp;
                 	int page_no = offset/PG_SIZE;
 			int page_off = offset%PG_SIZE;
 			int end_off = page_off+size;
-			StackFS_trace("The file name: %s already cached %d", name, size);
-			while(current!=NULL && page_no!=0){
+			int end_page = (offset+size)/PG_SIZE;
+			StackFS_trace("The file name: %s already cached endoff %d", name, end_off);
+			while(current!=NULL && current->next_page!=NULL && page_no > 0){
 				current = current->next_page;
+				start = start->next_page;
 				page_no--;
+				end_page--;
 			}
-			if(current!=NULL){
+			if(current!=NULL && current->next_page == NULL && end_page >= 1){
+				char * point = NULL;
+				int bytes_read = PG_SIZE;
+				StackFS_trace("The file name: %s", name);
+				if((point = strrchr(name,'.')) != NULL) {
+					struct stat buffer;
+					int file_name_len = strlen(name)-strlen(point);
+					char * file_name = (char *) malloc(file_name_len+EXT_LEN+1);
+					strncpy(file_name, name, file_name_len);
+					strncpy(file_name+file_name_len, EXT, EXT_LEN);
+					file_name[file_name_len+EXT_LEN] = '\0';
+					StackFS_trace("Reading more data from file: %s", file_name);
+					if(stat(file_name, &buffer) == 0) {
+						fd = open(file_name, fi->flags);
+					}
+				}
+				while(bytes_read == PG_SIZE && end_page!=0){
+					StackFS_trace("fd generated and offset: %d %d", fd, current->offset);
+					current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
+					current->next_page->prev_page = current;
+					current->next_page->next_page = NULL;
+					current->next_page->offset= current->offset;
+					current = current->next_page;
+					bytes_read = pread(fd, current->file_page, PG_SIZE, current->offset);
+					int off = 0;
+					while(off<bytes_read){
+						current->file_page[off] +=1;
+						off++;
+					}
+					current->offset+=bytes_read;
+					end_page--;
+				}
+				if(page_no>0 && start->next_page!=NULL){
+					start = start->next_page;
+					page_no--;
+				}
+				current->next_page = NULL;
+				StackFS_trace("decompress data: %s %d", current->file_page, bytes_read);
+			}
+			if(start!=NULL){
 				if(end_off<=PG_SIZE){
-					 memcpy(buf, current->file_page+offset, size);
-					 //strcpy(buf+size, '\0');
-					 res = strlen(current->file_page+offset);
+					 memcpy(buf, start->file_page+page_off, size);
+					 res = size;
 					 StackFS_trace("Data: %s", buf);
 				}else{
-					memcpy(buf, current->file_page+offset, PG_SIZE-page_off);
+					memcpy(buf, start->file_page+page_off, PG_SIZE-page_off);
 					end_off -= (PG_SIZE-page_off);
-					current = current->next_page;
+					start = start->next_page;
 					int buf_off = PG_SIZE-page_off;
-					while(current!=NULL && end_off>=PG_SIZE){
-						memcpy(buf, current->file_page ,PG_SIZE); 
+					while(start!=NULL && end_off>=PG_SIZE){
+						memcpy(buf+buf_off, start->file_page ,PG_SIZE); 
 						end_off -= PG_SIZE;
 						buf_off+= PG_SIZE;
 					}
-					if(current!=NULL){
-						memcpy(buf, current->file_page, end_off);
+					if(start!=NULL){
+						memcpy(buf+buf_off, start->file_page, end_off);
 						buf_off += end_off;
 						end_off = 0;
 					}
+					StackFS_trace("Data: %s", buf);
 					res = buf_off;
 				}
 			}
@@ -1359,34 +1437,82 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 	if(g_hash_table_contains(file_table,name)) {
 		struct file_pages* fp = g_hash_table_lookup (file_table, name);
 		struct file_pages* current = fp;
+		struct file_pages* start = fp;
 		int page_no = off/PG_SIZE;
 		int page_off = off%PG_SIZE;
 		int end_off = page_off+size;
-		while(current!=NULL && page_no!=0){
+		int end_page = (off+size)/PG_SIZE;
+		StackFS_trace("The file name: %d %d", page_no, end_off);
+		while(current!=NULL && current->next_page!=NULL && page_no>0){
 			current = current->next_page;
+			start = start->next_page;
 			page_no--;
+			end_page--;
 		}
-		if(current!=NULL){
+		StackFS_trace("The page_no, end_page: %d %d", page_no, end_page);
+		if(current!=NULL && current->next_page == NULL && end_page >= 1){
+			char * point = NULL;
+			int fd = 0;
+			int bytes_read = PG_SIZE;
+			StackFS_trace("The file name: %s", name);
+			if((point = strrchr(name,'.')) != NULL) {
+				struct stat buffer;
+				int file_name_len = strlen(name)-strlen(point);
+				char * file_name = (char *) malloc(file_name_len+EXT_LEN+1);
+				strncpy(file_name, name, file_name_len);
+				strncpy(file_name+file_name_len, EXT, EXT_LEN);
+				file_name[file_name_len+EXT_LEN] = '\0';
+				StackFS_trace("Reading more data from file: %s", file_name);
+				if(stat(file_name, &buffer) == 0) {
+					fd = open(file_name, fi->flags);
+				}
+			}
+			while(bytes_read == PG_SIZE && end_page!=0){
+				StackFS_trace("fd generated and offset: %d %d", fd, current->offset);
+				current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
+				current->next_page->prev_page = current;
+				current->next_page->next_page = NULL;
+				current->next_page->offset= current->offset;
+				current = current->next_page;
+				bytes_read = pread(fd, current->file_page, PG_SIZE, current->offset);
+				int off = 0;
+				while(off<bytes_read){
+					current->file_page[off] +=1;
+					off++;
+				}
+				current->offset+=bytes_read;
+				end_page--;
+			}
+			if(page_no>0 && start->next_page!=NULL){
+				start = start->next_page;
+				page_no--;
+			}
+			current->next_page = NULL;
+			StackFS_trace("decompress data: %s %d", current->file_page, bytes_read);
+		}
+		StackFS_trace("The page_no, end_page: %d %d", page_no, end_page);
+		if(start!=NULL){
 			if(end_off<PG_SIZE){
-				memcpy(current->file_page+off, buf, size);
+				memcpy(start->file_page+page_off, buf, size);
 				res = size;
 			}else{
-				memcpy(current->file_page+off, buf, PG_SIZE-page_off);
+				memcpy(start->file_page+page_off, buf, PG_SIZE-page_off);
 				end_off -= (PG_SIZE-page_off);
-				current = current->next_page;
+				start = start->next_page;
 				int buf_off = PG_SIZE-page_off;
-				while(current!=NULL && end_off>=PG_SIZE){
-					memcpy(current->file_page, buf+buf_off ,PG_SIZE);
+				while(start!=NULL && end_off>=PG_SIZE){
+					memcpy(start->file_page, buf+buf_off ,PG_SIZE);
 					end_off -= PG_SIZE;
 					buf_off+= PG_SIZE;
 				}
-				if(current!=NULL){
-					memcpy(current->file_page, buf+buf_off, end_off);
+				if(start!=NULL){
+					memcpy(start->file_page, buf+buf_off, end_off);
 					buf_off += end_off;
 					end_off = 0;
 				}
 				res = buf_off;
 			}
+			StackFS_trace("Written data: %s", start->file_page);
 		}
 	}else{
 		res = pwrite(fi->fh, buf, size, off);
