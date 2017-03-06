@@ -230,7 +230,7 @@ static int hash_table_resize(struct node_table *t)
 		return -1;
 	}
 
-	t->array = newarray;
+	t->array = (struct lo_inode**)newarray;
 	/* zero the newly allocated space */
 	memset(t->array + t->size, 0, t->size * sizeof(struct lo_inode *));
 	t->size = newsize;
@@ -393,14 +393,14 @@ static int insert_to_hash_table(struct lo_data *lo_data,
 static void hash_table_reduce(struct node_table *t)
 {
 	size_t newsize = t->size / 2;
-	void *newarray;
+	void* newarray;
 
 	if (newsize < HASH_TABLE_MIN_SIZE)
 		return;
 
 	newarray = realloc(t->array, sizeof(struct node *) * newsize);
 	if (newarray != NULL)
-		t->array = newarray;
+		t->array = (struct lo_inode **)newarray;
 
 	t->size = newsize;
 	t->split = t->size / 2;
@@ -533,7 +533,7 @@ struct lo_inode *find_lo_inode(fuse_req_t req, struct stat *st, char *fullpath)
 
 	if (lo_inode == NULL) {
 		/* create the node and insert into hash_table */
-		lo_inode =  calloc(1, sizeof(struct lo_inode));
+		lo_inode =  (struct lo_inode *)calloc(1, sizeof(struct lo_inode));
 		if (!lo_inode)
 			goto find_out;
 		lo_inode->ino = st->st_ino;
@@ -784,7 +784,7 @@ static void stackfs_ll_create(fuse_req_t req, fuse_ino_t parent,
 		struct lo_data *lo_data;
 		struct lo_inode *lo_inode;
 
-		lo_inode = calloc(1, sizeof(struct lo_inode));
+		lo_inode = (struct lo_inode*)calloc(1, sizeof(struct lo_inode));
 		if (!lo_inode) {
 			if (fullPath)
 				free(fullPath);
@@ -867,7 +867,7 @@ static void stackfs_ll_mkdir(fuse_req_t req, fuse_ino_t parent,
 		struct lo_data *lo_data;
 		struct lo_inode *lo_inode;
 
-		lo_inode = calloc(1, sizeof(struct lo_inode));
+		lo_inode = (struct lo_inode*)calloc(1, sizeof(struct lo_inode));
 		if (!lo_inode) {
 			if (fullPath)
 				free(fullPath);
@@ -1141,7 +1141,7 @@ static void stackfs_ll_opendir(fuse_req_t req, fuse_ino_t ino,
 	if (dp == NULL)
 		return (void) fuse_reply_err(req, errno);
 
-	d = malloc(sizeof(struct lo_dirptr));
+	d = (struct lo_dirptr*)malloc(sizeof(struct lo_dirptr));
 	d->dp = dp;
 	d->offset = 0;
 	d->entry = NULL;
@@ -1187,7 +1187,7 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			/*if(g_hash_table_contains(file_cache,name)){
 				fd = decompress(name);
 			}*/
-			struct file_pages* fp = g_hash_table_lookup (file_table, name);
+			struct file_pages* fp = (struct file_pages*)g_hash_table_lookup (file_table, name);
 			struct file_pages* current = fp;
 			struct file_pages* start = fp;
                 	int page_no = offset/PG_SIZE;
@@ -1233,7 +1233,7 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 					current->offset+=bytes_read;
 					end_page--;
 				}
-				if(page_no>0 && start->next_page!=NULL){
+				while(page_no>0 && start->next_page!=NULL){
 					start = start->next_page;
 					page_no--;
 				}
@@ -1254,6 +1254,7 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 						memcpy(buf+buf_off, start->file_page ,PG_SIZE); 
 						end_off -= PG_SIZE;
 						buf_off+= PG_SIZE;
+						start = start->next_page;
 					}
 					if(start!=NULL){
 						memcpy(buf+buf_off, start->file_page, end_off);
@@ -1299,7 +1300,7 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 	StackFS_trace("Readdir called on name : %s and inode : %llu",
 				lo_name(req, ino), lo_inode(req, ino)->ino);
 	d = lo_dirptr(fi);
-	buf = malloc(size*sizeof(char));
+	buf = (char *)malloc(size*sizeof(char));
 	GHashTable* directory_list = g_hash_table_new(g_str_hash, g_str_equal);
 	if (!buf)
 		return (void) fuse_reply_err(req, ENOMEM);
@@ -1340,8 +1341,8 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
                 	StackFS_trace("The file name: %s", file_name);
 			if(g_hash_table_lookup(directory_list, file_name)==NULL){
 				struct stat st = {
-                        		.st_ino = d->entry->d_ino,
-                        		.st_mode = d->entry->d_type << 12,
+                        		st_ino:d->entry->d_ino,
+                        		st_mode:d->entry->d_type << 12
                 		};
                 		entsize = fuse_add_direntry(req, p, rem,
                                         	file_name, &st, nextoff);
@@ -1355,8 +1356,8 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 		}
 		if(g_hash_table_lookup(directory_list, d->entry->d_name)==NULL){
 			struct stat st = {
-				.st_ino = d->entry->d_ino,
-				.st_mode = d->entry->d_type << 12,
+				st_ino:d->entry->d_ino,
+				st_mode:d->entry->d_type << 12
 			};
 			entsize = fuse_add_direntry(req, p, rem,
 					d->entry->d_name, &st, nextoff);
@@ -1435,7 +1436,7 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 	generate_start_time(req);
 	char * name = lo_name(req, ino);
 	if(g_hash_table_contains(file_table,name)) {
-		struct file_pages* fp = g_hash_table_lookup (file_table, name);
+		struct file_pages* fp = (struct file_pages*)g_hash_table_lookup (file_table, name);
 		struct file_pages* current = fp;
 		struct file_pages* start = fp;
 		int page_no = off/PG_SIZE;
@@ -1462,7 +1463,7 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 				strncpy(file_name, name, file_name_len);
 				strncpy(file_name+file_name_len, EXT, EXT_LEN);
 				file_name[file_name_len+EXT_LEN] = '\0';
-				StackFS_trace("Reading more data from file: %s", file_name);
+				StackFS_trace("Retrieving more data from file: %s", file_name);
 				if(stat(file_name, &buffer) == 0) {
 					fd = open(file_name, fi->flags);
 				}
@@ -1483,7 +1484,15 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 				current->offset+=bytes_read;
 				end_page--;
 			}
-			if(page_no>0 && start->next_page!=NULL){
+			while(end_page!=0){
+				current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
+                                current->next_page->prev_page = current;
+                                current->next_page->next_page = NULL;
+                                current->next_page->offset= current->offset;
+                                current = current->next_page;
+                                end_page--;
+			}	
+			while(page_no>0){				
 				start = start->next_page;
 				page_no--;
 			}
@@ -1492,10 +1501,13 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 		}
 		StackFS_trace("The page_no, end_page: %d %d", page_no, end_page);
 		if(start!=NULL){
-			if(end_off<PG_SIZE){
+			if(end_off<=PG_SIZE){
+				StackFS_trace("The page before insert: %s", start->file_page);
 				memcpy(start->file_page+page_off, buf, size);
+				StackFS_trace("The page after insert: %s", start->file_page);
 				res = size;
 			}else{
+				StackFS_trace("The page before insert: %s", start->file_page);
 				memcpy(start->file_page+page_off, buf, PG_SIZE-page_off);
 				end_off -= (PG_SIZE-page_off);
 				start = start->next_page;
@@ -1504,6 +1516,7 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 					memcpy(start->file_page, buf+buf_off ,PG_SIZE);
 					end_off -= PG_SIZE;
 					buf_off+= PG_SIZE;
+					start = start->next_page;
 				}
 				if(start!=NULL){
 					memcpy(start->file_page, buf+buf_off, end_off);
@@ -1524,6 +1537,11 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 
 	fuse_reply_write(req, res);
 }
+
+//static void  stackfs_ll_lseek(fuse_req_t req, fuse_ino_t ino, off_t off,struct fuse_file_info *fi){
+//	StackFS_trace("Seek on name : %s, off : %lu",
+//                                lo_name(req, ino), off);
+//}
 
 #if	USE_SPLICE
 static void stackfs_ll_write_buf(fuse_req_t req, fuse_ino_t ino,
@@ -1738,31 +1756,31 @@ static void stackfs_ll_getxattr(fuse_req_t req, fuse_ino_t ino,
 #endif
 
 static struct fuse_lowlevel_ops hello_ll_oper = {
-	.lookup		=	stackfs_ll_lookup,
-	.getattr	=	stackfs_ll_getattr,
-	.statfs		=	stackfs_ll_statfs,
-	.setattr	=	stackfs_ll_setattr,
-	.flush		=	stackfs_ll_flush,
-	.fsync		=	stackfs_ll_fsync,
+	lookup	:stackfs_ll_lookup,
+	forget  :stackfs_ll_forget,
+	getattr	:stackfs_ll_getattr,
+	setattr :stackfs_ll_setattr,
+	mkdir   :stackfs_ll_mkdir,
+	unlink  :stackfs_ll_unlink,
+	rmdir   :stackfs_ll_rmdir,
+	open    :stackfs_ll_open,
+	read    :stackfs_ll_read,
+        write   :stackfs_ll_write,
+	flush   :stackfs_ll_flush,
+	release :stackfs_ll_release,
+	fsync   :stackfs_ll_fsync,
+	opendir :stackfs_ll_opendir,
+        readdir :stackfs_ll_readdir,
+        releasedir:stackfs_ll_releasedir,
+	statfs	:stackfs_ll_statfs,
 #if	TESTING_XATTR
-	.getxattr	=	stackfs_ll_getxattr,
+	getxattr:	stackfs_ll_getxattr,
 #endif
-	.forget		=	stackfs_ll_forget,
-	.forget_multi	=	stackfs_ll_forget_multi,
-	.create		=	stackfs_ll_create,
-	.open		=	stackfs_ll_open,
-	.read		=	stackfs_ll_read,
-	.write		=	stackfs_ll_write,
+	create  :       stackfs_ll_create,
 #if	USE_SPLICE
-	.write_buf	=	stackfs_ll_write_buf,
+	write_buf:	stackfs_ll_write_buf,
 #endif
-	.release	=	stackfs_ll_release,
-	.unlink		=	stackfs_ll_unlink,
-	.mkdir		=	stackfs_ll_mkdir,
-	.rmdir		=	stackfs_ll_rmdir,
-	.opendir	=	stackfs_ll_opendir,
-	.readdir	=	stackfs_ll_readdir,
-	.releasedir	=	stackfs_ll_releasedir
+	forget_multi:   stackfs_ll_forget_multi
 };
 
 struct stackFS_info {
@@ -1789,7 +1807,7 @@ static const struct fuse_opt stackfs_opts[] = {
 static int stackfs_process_arg(void *data, const char *arg,
 				int key, struct fuse_args *outargs)
 {
-	struct stackFS_info *s_info = data;
+	struct stackFS_info *s_info =  (struct stackFS_info *)data;
 
 	(void)outargs;
 	(void)arg;
@@ -1814,6 +1832,7 @@ int main(int argc, char **argv)
 	char *resolved_statsDir = NULL;
 	char *resolved_rootdir_path = NULL;
 	int multithreaded;
+	hello_ll_oper.lookup = stackfs_ll_lookup;
 	file_table = g_hash_table_new(g_str_hash, g_str_equal);
 	file_cache = g_hash_table_new(g_str_hash, g_str_equal);
 	file_node_head = (struct file_node*) malloc(sizeof(struct file_node));
