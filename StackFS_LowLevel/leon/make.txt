@@ -1,0 +1,93 @@
+-- SOVERSION: 8.0.0
+-- Performing TEST_LFS_WORKS... yes
+-- Filter ZLIB is ON
+-- Could NOT find Doxygen (missing:  DOXYGEN_EXECUTABLE) 
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /var/services/homes/gbalakrishna/myCode/fuse-stackfs/StackFS_LowLevel/leon/build
+[  0%] Built target H5make_libsettings
+Built target H5detect
+[  0%] Built target emphf_copyasis
+[ 70%] Built target hdf5
+[ 74%] Built target hdf5_tools
+[ 75%] Built target h5dump
+[ 75%] Built target hdf5_postbuild
+Scanning dependencies of target gatbcore-static
+[ 75%] [ 76%] [ 76%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/bank/impl/Bank.cpp.o
+[ 76%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/bank/impl/BankAlbum.cpp.o
+Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/bank/impl/BankConverterAlgorithm.cpp.o
+[ 77%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/bank/impl/BankFasta.cpp.o
+[ 77%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/bank/impl/BankHelpers.cpp.o
+[ 77%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/bank/impl/BankRandom.cpp.o
+[ 77%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/bank/impl/BankSplitter.cpp.o
+[ 78%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/debruijn/impl/BranchingAlgorithm.cpp.o
+[ 78%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/debruijn/impl/Frontline.cpp.o
+[ 78%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/debruijn/impl/Graph.cpp.o
+[ 79%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/debruijn/impl/IterativeExtensions.cpp.o
+[ 79%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/debruijn/impl/Simplifications.cpp.o
+[ 79%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/debruijn/impl/Terminator.cpp.o
+[ 79%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/debruijn/impl/Traversal.cpp.o
+[ 80%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/BloomAlgorithm.cpp.o
+[ 80%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/Configuration.cpp.o
+[ 81%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/ConfigurationAlgorithm.cpp.o
+[ 81%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/DebloomAlgorithm.cpp.o
+[ 81%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/DebloomMinimizerAlgorithm.cpp.o
+[ 81%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/LinearCounter.cpp.o
+[ 82%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/MPHFAlgorithm.cpp.o
+[ 82%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/Model.cpp.o
+[ 83%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/PartiInfo.cpp.o
+[ 83%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/PartitionsCommand.cpp.o
+[ 83%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/RepartitionAlgorithm.cpp.o
+[ 84%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/kmer/impl/SortingCountAlgorithm.cpp.o
+[ 84%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/system/impl/FileSystemCommon.cpp.o
+[ 85%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/system/impl/System.cpp.o
+[ 85%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/system/impl/SystemInfoCommon.cpp.o
+[ 85%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/collections/impl/Bloom.cpp.o
+[ 85%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/designpattern/impl/Command.cpp.o
+[ 86%] [ 86%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/designpattern/impl/Observer.cpp.o
+[ 86%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/misc/impl/Algorithm.cpp.o
+Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/misc/impl/Histogram.cpp.o
+[ 87%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/misc/impl/OptionsParser.cpp.o
+[ 87%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/misc/impl/Progress.cpp.o
+[ 87%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/misc/impl/Property.cpp.o
+[ 87%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/misc/impl/TimeInfo.cpp.o
+[ 88%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/misc/impl/Tokenizer.cpp.o
+[ 88%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/misc/impl/Tool.cpp.o
+[ 89%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/storage/impl/Storage.cpp.o
+[ 89%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/tools/storage/impl/StorageTools.cpp.o
+[ 89%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization1.cpp.in_32.cpp.o
+[ 89%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization2.cpp.in_32.cpp.o
+[ 90%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization3.cpp.in_32.cpp.o
+[ 90%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization4.cpp.in_32.cpp.o
+[ 90%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization5.cpp.in_32.cpp.o
+[ 91%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization6.cpp.in_32.cpp.o
+[ 91%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization7.cpp.in_32.cpp.o
+[ 91%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization1.cpp.in_64.cpp.o
+[ 92%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization2.cpp.in_64.cpp.o
+[ 92%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization3.cpp.in_64.cpp.o
+[ 92%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization4.cpp.in_64.cpp.o
+[ 92%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization5.cpp.in_64.cpp.o
+[ 93%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization6.cpp.in_64.cpp.o
+[ 93%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization7.cpp.in_64.cpp.o
+[ 93%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization1.cpp.in_96.cpp.o
+[ 94%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization2.cpp.in_96.cpp.o
+[ 94%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization3.cpp.in_96.cpp.o
+[ 94%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization4.cpp.in_96.cpp.o
+[ 94%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization5.cpp.in_96.cpp.o
+[ 95%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization6.cpp.in_96.cpp.o
+[ 95%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization7.cpp.in_96.cpp.o
+[ 95%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization1.cpp.in_128.cpp.o
+[ 96%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization2.cpp.in_128.cpp.o
+[ 96%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization3.cpp.in_128.cpp.o
+[ 96%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization4.cpp.in_128.cpp.o
+[ 96%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization5.cpp.in_128.cpp.o
+[ 97%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization6.cpp.in_128.cpp.o
+[ 97%] Building CXX object ext/gatb-core/src/CMakeFiles/gatbcore-static.dir/gatb/template/TemplateSpecialization7.cpp.in_128.cpp.o
+Linking CXX static library ../lib/libgatbcore.a
+[ 98%] Built target gatbcore-static
+Scanning dependencies of target leon
+[ 98%] [ 99%] [ 99%] Building CXX object CMakeFiles/leon.dir/src/DnaCoder.cpp.o
+Building CXX object CMakeFiles/leon.dir/src/Leon.cpp.o
+Building CXX object CMakeFiles/leon.dir/src/HeaderCoder.cpp.o
+Building CXX object CMakeFiles/leon.dir/src/OrderedBlocks.cpp.o
+[100%] Building CXX object CMakeFiles/leon.dir/src/main.cpp.o
