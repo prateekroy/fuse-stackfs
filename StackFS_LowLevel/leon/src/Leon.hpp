@@ -31,6 +31,7 @@
 
 #include <iostream>
 #include <gatb/gatb_core.hpp>
+#include <libconfig.h++>
 #include <sys/time.h>
 
 /** NOTE: we should not include namespaces here => only to make user life easier... */
@@ -83,6 +84,10 @@ class Leon : public misc::impl::Tool
 		Leon();
 		~Leon();
 	
+		vector<int>* _dnaSeqSize = new vector<int>();
+		vector<int>* _headSeqSize = new vector<int>();	
+		vector<int>* _qualSeqSize = new vector<int>();
+		vector<int>* _seqCount = new vector<int>();
 		static const char* STR_COMPRESS;
 		static const char* STR_DECOMPRESS;
 		static const char* STR_TEST_DECOMPRESSED_FILE;
@@ -92,7 +97,7 @@ class Leon : public misc::impl::Tool
 	
 		size_t          _kmerSize;
 		string     _dskOutputFilename;
-		static const int READ_PER_BLOCK = 50000;
+		static const int READ_PER_BLOCK = 3000;
 		int _nb_cores;
 		
 		bool _compress, _decompress;
@@ -191,7 +196,7 @@ class Leon : public misc::impl::Tool
 		static int bin2nt(int nt){
 			return bin2ntTab[nt];
 		}
-		void executeDecompression(int off, char* buf);
+		int executeDecompression(int off, char* buf, int size);
 	
 	private:
 
@@ -203,7 +208,8 @@ class Leon : public misc::impl::Tool
 		IFile* _outputFile;
 		ofstream* _dictAnchorFile;
 		int _nks;
-		
+		 
+		void readConfig();
 		void execute ();
 		void createBloom ();
 		//void createKmerAbundanceHash();
@@ -236,7 +242,9 @@ class Leon : public misc::impl::Tool
 		void executeCompression();
 		//void executeDecompression();
 		void endCompression();
+		void saveConfig();
 		void endQualCompression();
+		int findBlockId(int off, int &blockOff);
 	
 		//Global decompression
 		void setupNextComponent(vector<u_int64_t>   & blockSizes  );
@@ -258,7 +266,7 @@ class Leon : public misc::impl::Tool
 		u_int64_t _filePosQual;
 
 	
-		void startDecompressionAllStreams(int off, char* buf);
+		int startDecompressionAllStreams(int off, char* buf, int size);
 	
 		//Header compression
 		void startHeaderCompression();

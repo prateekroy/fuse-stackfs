@@ -329,7 +329,10 @@ void DnaEncoder::operator()(Sequence& sequence){
 	_readSize = _sequence->getDataSize();
 	_readseq = _sequence->getDataBuffer();
 		
-	_totalDnaSize += _readSize ;
+	_totalDnaSize += _readSize;
+	cout<<"Read Size: "<<_readSize<<endl;
+	cout<<"seq id: "<<_seqId<<endl;
+	_leon->_dnaSeqSize->push_back(_readSize);
 	//_lastSequenceIndex = sequence->getIndex();
 	
 //	if(_sequence->getIndex() % Leon::READ_PER_BLOCK == 0){
@@ -342,7 +345,8 @@ void DnaEncoder::operator()(Sequence& sequence){
 #endif
 
 	if(_processedSequenceCount >= Leon::READ_PER_BLOCK ){
-		
+		_leon->_seqCount->push_back(_processedSequenceCount);
+		cout<<"_processedSequenceCount: "<<_processedSequenceCount<<endl;
 		writeBlock();
 		startBlock();
 	}
@@ -497,7 +501,7 @@ void DnaEncoder::smoothQuals()
 	}
 	
 	strcpy(_bufferQuals + _bufferQuals_idx, _qualseq);
-
+	_leon->_qualSeqSize->push_back(_readSize);
 	_bufferQuals_idx += _readSize+1 ; // with last '\n'
 
 	//fprintf(_leon->_testQual,"%s",_qualseq); //st_qualseq.c_str()

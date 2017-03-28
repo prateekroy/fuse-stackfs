@@ -268,7 +268,6 @@ HeaderEncoder::~HeaderEncoder(){
 	int nb_remaining = __sync_fetch_and_add (&_leon->_nb_thread_living, -1);
 	
 	__sync_fetch_and_add(&_leon->_totalHeaderSize, _totalHeaderSize);
-	
 #ifndef SERIAL
 	//_leon->_blockwriter->incDone(1);
 	_leon->_blockwriter->waitForWriter();
@@ -322,7 +321,9 @@ void HeaderEncoder::operator()(Sequence& sequence){
 	_currentHeader = sequence.getComment();
 	
 	_totalHeaderSize += _currentHeader.size();
-	
+	cout<<"Header Size: "<<_currentHeader.size()<<endl;
+	cout<<"Sequence Id: "<<_seqId<<endl;
+	_leon->_headSeqSize->push_back(_currentHeader.size());
 	processNextHeader();
 	
 	
@@ -331,7 +332,6 @@ void HeaderEncoder::operator()(Sequence& sequence){
 		writeBlock();
 		startBlock();
 	}
-	
 }
 
 void HeaderEncoder::writeBlock(){

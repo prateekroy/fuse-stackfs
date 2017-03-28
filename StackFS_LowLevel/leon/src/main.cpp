@@ -925,7 +925,7 @@ static char* change_file_ext(char * name, char* ext){
 }
 
 static char** prep_args(char * name, bool compress){
-	char** argv = new char*[4];
+	char** argv = new char*[6];
 	argv[0] = new char[7];
 	strcpy(argv[0],"./leon");
 	argv[1] = new char[6];
@@ -938,6 +938,10 @@ static char** prep_args(char * name, bool compress){
 	}else{
 		strcpy(argv[3], "-d");
 	}
+	argv[4] = new char[10];
+	strcpy(argv[4], "-nb-cores");
+	argv[5] = new char[2];
+	strcpy(argv[5], "1");
 	return argv;
 }
 
@@ -955,8 +959,8 @@ static void decompress_store(char * name, int fd){
 		fp->offset = 0;
 		char* file_name = change_file_ext(name, ".leon");
 		Leon leon;
-		leon.run(4, prep_args(file_name,false));
-		leon.executeDecompression(offSet, current->file_page);
+		leon.run(6, prep_args(file_name,false));
+		leon.executeDecompression(offSet, current->file_page, PG_SIZE);
 		offSet = strlen(current->file_page)+1;
 		current->offset = offSet;
 		StackFS_trace("decompress data: %s", current->file_page);	
@@ -1209,7 +1213,6 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			int page_off = offset%PG_SIZE;
 			int end_off = page_off+size;
 			int end_page = (offset+size)/PG_SIZE;
-			Leon leon;		
 			StackFS_trace("The file name: %s already cached endoff %d", name, end_off);
 			while(current!=NULL && current->next_page!=NULL && page_no > 0){
 				current = current->next_page;
@@ -1221,18 +1224,15 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 				char * point = NULL;
 				int bytes_read = PG_SIZE;
 				StackFS_trace("The file name: %s", name);
+				char * file_name;
 				if((point = strrchr(name,'.')) != NULL) {
 					struct stat buffer;
 					int file_name_len = strlen(name)-strlen(point);
-					char * file_name = (char *) malloc(file_name_len+EXT_LEN+1);
+					file_name = (char *) malloc(file_name_len+EXT_LEN+1);
 					strncpy(file_name, name, file_name_len);
 					strncpy(file_name+file_name_len, EXT, EXT_LEN);
 					file_name[file_name_len+EXT_LEN] = '\0';
 					StackFS_trace("Reading more data from file: %s", file_name);
-					if(stat(file_name, &buffer) == 0) {
-						//fd = open(file_name, fi->flags);
-						leon.run(4, prep_args(file_name,false));
-					}
 				}
 				while(bytes_read == PG_SIZE && end_page!=0){
 					StackFS_trace("fd generated and offset: %d", current->offset);
@@ -1242,8 +1242,11 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 					current->next_page->offset= current->offset;
 					current = current->next_page;
 					//bytes_read = pread(fd, current->file_page, PG_SIZE, current->offset);
-					leon.executeDecompression(current->offset, current->file_page);
-                			current->offset += strlen(current->file_page)+1;
+					Leon leon;
+					leon.run(6, prep_args(file_name,false));
+					bytes_read = leon.executeDecompression(current->offset, 
+								current->file_page, PG_SIZE);
+                			current->offset += bytes_read;
 					end_page--;
 				}
 				while(page_no>0 && start->next_page!=NULL){

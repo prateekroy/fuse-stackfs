@@ -62,7 +62,7 @@ find_package(GLIB2 REQUIRED)
 #include_directories (${FUSE_INCLUDE_DIR})
 #include_directories (${GLIB_INCLUDE_DIRS})
 # We add the compilation options for the library
-add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=30)
+add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=30 -g)
 add_definitions (${gatb-core-flags})
 
 # We add the gatb-core include directory
@@ -79,7 +79,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 include_directories (${PROGRAM_SOURCE_DIR})
 file (GLOB_RECURSE  ProjectFiles  ${PROGRAM_SOURCE_DIR}/*.cpp)
 add_executable(${PROJECT_NAME} ${ProjectFiles})
-target_link_libraries(${PROJECT_NAME} ${gatb-core-libraries} ${FUSE_LIBRARIES} ${GLIB2_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} -lconfig++ ${gatb-core-libraries} ${FUSE_LIBRARIES} ${GLIB2_LIBRARIES})
 
 
 ################################################################################

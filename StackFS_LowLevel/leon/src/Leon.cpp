@@ -64,9 +64,16 @@ TODO
  
  
 #include "Leon.hpp"
-
+#define C_FILES "files"
+#define C_FILE "file_name"
+#define SEQ "seq"
+#define HEAD "head"
+#define DNA "dna"
+#define QUAL "qual"
+#define CONFIG ".biofs.dirinfo"
 
 using namespace std;
+using namespace libconfig;
 
 //#define SERIAL //this macro is also define in the execute() method
 //#define PRINT_DEBUG
@@ -217,7 +224,7 @@ void Leon::execute()
 	
 	if(_compress){
 		//#define SERIAL
-//		executeCompression();
+		executeCompression();
 	}
 	else{
 //		executeDecompression();
@@ -358,177 +365,7 @@ void Leon::createBloom (){
     BloomBuilder<> builder (estimatedBloomSize, 7,_kmerSize,tools::misc::BLOOM_NEIGHBOR,getInput()->getInt(STR_NB_CORES),_auto_cutoff);
     _bloom = builder.build (itKmers); // BLOOM_NEIGHBOR // BLOOM_CACHE
 
-	//printf ("bloom size %lli  bits per k %f  nbkemrs infile %lli \n",estimatedBloomSize,NBITS_PER_KMER,nbs);
-    //BloomBuilder<> builder (estimatedBloomSize, 7,tools::collections::impl::BloomFactory::CACHE,getInput()->getInt(STR_NB_CORES));
-    //Bloom<kmer_type>* bloom = builder.build (itKmers);
-    
-	/*
-	vector<u_int64_t> tab;
-	
-	for(int i=0; i<256; i++){
-		tab.push_back(0);
-	}
-	
-	for(int i=0; i<_bloom->getSize(); i++){
-		tab[_bloom->getArray()[i]] += 1;
-	}
-	
-	cout << tab.size() << " " << _bloom->getSize() << endl;
-	for(int i=0; i<tab.size(); i++){
-		cout << i << " " << tab[i] << endl;
-	}*/
-	
-	//_rangeEncoder.clear();
-	//_generalModel.clear();
-	//for(int i=0; i<_bloom->getSize(); i++){
-	//	_rangeEncoder.encode(_generalModel, _bloom->getArray()[i]);
-	//}
-
-	/*
-	z_stream zs;                        // z_stream is zlib's control structure
-    memset(&zs, 0, sizeof(zs));
-
-    if (deflateInit(&zs, Z_BEST_COMPRESSION) != Z_OK)
-        throw(std::runtime_error("deflateInit failed while compressing."));
-
-    zs.next_in = (Bytef*)_bloom->getArray();
-    zs.avail_in = _bloom->getSize();           // set the z_stream's input
-
-    int ret;
-    char outbuffer[32768];
-    std::string outstring;
-
-    // retrieve the compressed bytes blockwise
-    do {
-        zs.next_out = reinterpret_cast<Bytef*>(outbuffer);
-        zs.avail_out = sizeof(outbuffer);
-
-        ret = deflate(&zs, Z_FINISH);
-
-        if (outstring.size() < zs.total_out) {
-            // append the block to the output string
-            outstring.append(outbuffer,
-                             zs.total_out - outstring.size());
-        }
-    } while (ret == Z_OK);
-
-    deflateEnd(&zs);
-    
-	cout << "Bloom size: " << _bloom->getSize() << endl;
-	cout << "Compressed Bloom size: " << outstring.size() << endl; */
-	
-
-    /*
-	#ifdef PRINT_DEBUG
-		cout << "\tFilling kmer abundance hash" << endl;
-	#endif
-
-	int ithresholds[4] = {200,50,_nks};
-	vector<int> thresholds(ithresholds, ithresholds + sizeof(ithresholds) / sizeof(int));
-	u_int64_t size = 0;
-	u_int64_t maxSizeMB = 500;
-	u_int64_t maxSizeB = maxSizeMB * MBYTE;
-	//u_int64_t absoluteMaxSize = (maxSize*3)/4;
-    //_kmerAbundance = new OAHash<kmer_type>(maxSize);
-    _kmerAbundance = new Hash16<kmer_type>(maxSizeMB);
-
-
-
-    //itKmers.reset();
-    //itKmers.first();
-    //KmerModel model(_kmerSize);
-
-    //IteratorFile<kmer_count> it(_dskOutputFilename);
-    itKmers = solidCollection.iterator();
-
-    for(int i=0; i<thresholds.size()-1; i++){
-		for (itKmers->first(); !itKmers->isDone(); itKmers->next()){
-			kmer_count count = itKmers->item();
-
-			if(count.abundance >= thresholds[i]){
-				if(i == 0 || count.abundance < thresholds[i-1]){
-					_kmerAbundance->insert(count.value, count.abundance);
-					//cout <<
-					//size += OAHash<kmer_type>::size_entry();
-					size += sizeof(kmer_type) + sizeof(int);
-				}
-			}
-
-			//cout << size << endl;
-			if(size > maxSizeB) break;
-			//if(size > absoluteMaxSize) break;
-		}
-
-		if(size > maxSizeB) break;
-		//if(size > absoluteMaxSize) break;
-	}
-
-	#ifdef PRINT_DEBUG
-		cout << "\t\tNeeded memory: " << size << endl;
-		cout << "\t\tAllocated memory: " << _kmerAbundance->memory_usage() << endl;
-	#endif
-	*/
-
-
 }
-/*
-
-void Leon::createKmerAbundanceHash(){
-	#ifdef PRINT_DEBUG
-		cout << "\tFilling kmer abundance hash" << endl;
-	#endif
-
-	int ithresholds[4] = {200,50,20,10};
-	vector<int> thresholds(ithresholds, ithresholds + sizeof(ithresholds) / sizeof(int));	
-	//u_int64_t size = 0;
-	u_int64_t maxSizeMB = 500;
-	//u_int64_t absoluteMaxSize = (maxSize*3)/4;
-    //_kmerAbundance = new OAHash<kmer_type>(maxSize);
-    _kmerAbundance = new Hash16(maxSizeMB);
-
-
-	
-	
-    KmerModel model(_kmerSize);
-    
-    IteratorFile<kmer_count> it(_dskOutputFilename);
-    
-    for(int i=0; i<thresholds.size()-1; i++){
-		for (it.first(); !it.isDone(); it.next()){
-			kmer_count count = (*it);
-			
-			if(count.abundance >= thresholds[i]){
-				if(i == 0 || count.abundance < thresholds[i-1]){
-					_kmerAbundance->insert(count.value, count.abundance);
-					//size += OAHash<kmer_type>::size_entry();
-					size += sizeof(kmer_type) + sizeof(u_int32_t) + sizeof(int)*2;
-				}
-			}
-	
-			//if(size > maxSize-100000) break;
-			//if(size > absoluteMaxSize) break;
-		}
-		
-		//if(size > absoluteMaxSize) break;
-	}
-
-	#ifdef PRINT_DEBUG
-		cout << "\t\tNeeded memory: " << size << endl;
-		cout << "\t\tAllocated memory: " << _kmerAbundance->memory_usage() << endl;
-	#endif
-}
-*/
-
-
-
-
-
-
-
-
-
-
-
 
 
 void Leon::executeCompression(){
@@ -847,7 +684,6 @@ void Leon::writeBlock(u_int8_t* data, u_int64_t size, int encodedSequenceCount,u
 	
 	pthread_mutex_unlock(&writeblock_mutex);
 
-
 		
 	/*
 	int thread_id = encoder->getId();
@@ -877,7 +713,114 @@ void Leon::writeBlock(u_int8_t* data, u_int64_t size, int encodedSequenceCount,u
 	pthread_cond_broadcast(&buffer_full_cond);*/
 	
 }
-		
+
+void Leon::readConfig(){
+	string dir = System::file().getDirectory(_inputFilename);
+        string configFileName = dir+"/"+CONFIG;
+        struct stat configFile;
+	string inFile = System::file().getBaseName(_inputFilename);
+        Config cfg;
+        if(stat(configFileName.c_str(), &configFile) != 0){
+		cout<<"file not found in "<<configFileName.c_str()<<endl;
+                ofstream{configFileName.c_str()};
+        }
+	cfg.readFile(configFileName.c_str());
+	const Setting &root = cfg.getRoot();
+	const Setting &files = root[0];
+        int count = files.getLength(); 
+	for(int i = 0; i < count; ++i){
+		const Setting &file = files[i];
+		string name;
+		if(file.lookupValue(C_FILE, name) && 
+			strcmp(name.c_str(), inFile.c_str())==0) {
+			const Setting &seq = file[SEQ];
+			int cnt = seq.getLength();
+			for(int j=0;j<cnt;j++){
+				_seqCount->push_back(seq[j]);
+			}
+			const Setting &head = file[2];
+			const Setting &dna = file[3];
+			cnt = dna.getLength();
+			for(int j=0;j<cnt;j++){
+                                _headSeqSize->push_back(head[j]);
+				_dnaSeqSize->push_back(dna[j]);
+                        }
+			if(! _isFasta)
+        		{
+				const Setting &qual = file[4];
+				cnt = qual.getLength();
+				for(int j=0;j<cnt;j++){
+                                	_qualSeqSize->push_back(qual[j]);
+                        	}
+			}	
+			break;	 
+		}
+	}
+}
+
+void Leon::saveConfig(){
+	string dir = System::file().getDirectory(_inputFilename);
+	string configFileName = dir +"/"+ CONFIG;
+	struct stat configFile;
+	Config cfg;
+	if(stat(configFileName.c_str(), &configFile) != 0){
+		ofstream{configFileName.c_str()};
+	}
+	try
+	{
+		cfg.readFile(configFileName.c_str());
+	}
+	catch(const FileIOException &fioex)
+	{
+		cerr << "I/O error while reading file." << endl;
+	}
+	catch(const ParseException &pex)
+	{
+		cerr << "Parse error at " << pex.getFile() << ":" << pex.getLine()
+			<< " - " << pex.getError() <<endl;
+	}
+	Setting &root = cfg.getRoot();
+	if(! root.exists(C_FILES))
+    		root.add(C_FILES, Setting::TypeGroup);	
+	Setting &files = root[C_FILES]; 
+	if(files.exists(System::file().getBaseName(_inputFilename)))
+		files.remove(System::file().getBaseName(_inputFilename));
+	Setting &file = files.add(System::file().getBaseName(_inputFilename), Setting::TypeGroup);
+	if(!file.exists(C_FILE)){
+		Setting &name = file.add(C_FILE, Setting::TypeString);
+		name =  _inputFilename.c_str();
+	}
+	Setting &seq = file.add(SEQ, Setting::TypeList);
+	if(_headSeqSize->size()%READ_PER_BLOCK !=0)
+		_seqCount->push_back(_headSeqSize->size()%READ_PER_BLOCK );
+        for ( int i = 0; i < _seqCount->size(); i++ ) {
+                seq.add(Setting::TypeInt) = (*_seqCount)[i];
+        }
+	Setting &head  = file.add(HEAD, Setting::TypeList);
+	for ( int i = 0; i < _headSeqSize->size(); i++ ) {	
+                head.add(Setting::TypeInt) = (*_headSeqSize)[i];
+        }
+	Setting &dna = file.add(DNA, Setting::TypeList);
+        for ( int i = 0; i < _dnaSeqSize->size(); i++ ) {
+                dna.add(Setting::TypeInt) = (*_dnaSeqSize)[i];
+        }
+	Setting &qual = file.add(QUAL, Setting::TypeList);
+        for ( int i = 0; i < _qualSeqSize->size(); i++ ) {
+                qual.add(Setting::TypeInt) = (*_qualSeqSize)[i];
+        }
+	try
+	{
+		cout<<configFileName.c_str()<<endl;
+		cfg.writeFile(configFileName.c_str());
+		cerr << "Updated configuration successfully written to: " << configFileName
+		<< endl;
+	}
+	catch(const FileIOException &fioex)
+	{
+		cerr << "I/O error while writing file: " << configFileName << endl;
+	}		
+}
+
 void Leon::endCompression(){
 	_rangeEncoder.flush();
 	_outputFile->fwrite(_rangeEncoder.getBuffer(true), _rangeEncoder.getBufferSize(), 1);
@@ -932,10 +875,7 @@ void Leon::endCompression(){
 	std::cout.precision(2);
 	printf("\tTime: %.2fs\n", (  _wfin_leon - _wdebut_leon) );
 	printf("\tSpeed: %.2f mo/s\n", (System::file().getSize(_inputFilename)/1000000.0) / (  _wfin_leon - _wdebut_leon) );
-
-	
-	//printf("\tTime: %.2fs\n", (double)(clock() - _time)/CLOCKS_PER_SEC);
-	//printf("\tSpeed: %.2f mo/s\n", (System::file().getSize(_inputFilename)/1000000.0) / ((double)(clock() - _time)/CLOCKS_PER_SEC));
+	saveConfig();
 }
 		
 		
@@ -1545,7 +1485,7 @@ void * decoder_qual_thread(void * args)
 	pthread_exit(0);
 }
 
-void Leon::executeDecompression(int off, char* buf){
+int Leon::executeDecompression(int off, char* buf, int size){
 	
 	_filePos = 0;
 	
@@ -1650,8 +1590,8 @@ void Leon::executeDecompression(int off, char* buf){
 	//		cout << "\tWarning diff version "   << endl;
 	//	}
 	
-	
-	startDecompressionAllStreams(off, buf);
+	readConfig();
+	int ret = startDecompressionAllStreams(off, buf, size);
 	
 	/*
 	 startHeaderDecompression();
@@ -1663,10 +1603,37 @@ void Leon::executeDecompression(int off, char* buf){
 	 */
 	
 	endDecompression();
+	return ret;
 }
 
+int Leon::findBlockId(int off, int &blockOff){
+	int seqNo = 0;
+	int blockId = 0;
+	blockOff = 0;
+	while(seqNo<_headSeqSize->size() ){
+		int seqSize = (*_headSeqSize)[seqNo] + (*_dnaSeqSize)[seqNo];
+		if(!_isFasta)
+			seqSize += (*_qualSeqSize)[seqNo];
+		if(off>seqSize){
+			off-=seqSize;
+			seqNo++;
+			blockOff += seqSize;
+			if(blockId< _seqCount->size() && seqNo>=(*_seqCount)[blockId]){
+                        	seqNo -= (*_seqCount)[blockId];
+                                blockId++;
+				blockOff = 0;
+                        }
+		}
+		else{
+			blockOff += off;
+			break;
+		}	
+	}
+	cout<<endl<<"block Id: "<<blockId<<" block Off: "<<blockOff<<endl;
+	return blockId;
+}
 
-void Leon::startDecompressionAllStreams(int off, char* buf){
+int Leon::startDecompressionAllStreams(int off, char* buf, int size){
 	
 	_filePosHeader = 0;
 	_filePosDna = 0;
@@ -1757,11 +1724,14 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 	}
 	pthread_t * tab_threads = new pthread_t [_nb_cores];
 	thread_arg_decoder *  targ = new thread_arg_decoder [_nb_cores];
-	
+	cout<<endl<<"offset: "<<off<<endl;
 	int i = 0;
 	int livingThreadCount = 0;
-	cout<<"dna sizes: "<<_dnaBlockSizes.size()<<endl;
-	while(i < _dnaBlockSizes.size()){
+	int fromOff = 0, toOff = 0, bufOff = 0;
+	int fromBlock = findBlockId(off, fromOff);
+	int toBlock = findBlockId(off+size, toOff);
+	cout<<endl<<"dna sizes: "<<_dnaBlockSizes.size()<<endl;
+	for(int i=fromBlock;i<=toBlock && i < _dnaBlockSizes.size();i++){
 		
 		for(int j=0; j<_nb_cores; j++){
 			
@@ -1784,11 +1754,11 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 				blockSize = _headerBlockSizes[i];
 				sequenceCount = _headerBlockSizes[i+1];
 				hdecoder = headerdecoders[j];
+				cout<<"file_pos_header: "<<_filePosHeader<<endl;
+                                cout<<"blockSize: "<<blockSize<<endl;
+                                cout<<"sequenceCount: "<<sequenceCount<<endl;
 				hdecoder->setup(_filePosHeader, blockSize, sequenceCount);
 				_filePosHeader += blockSize;
-				cout<<"file_pos_dna: "<<_filePosHeader<<endl;
-                        	cout<<"blockSize: "<<blockSize<<endl;
-                        	cout<<"sequenceCount: "<<sequenceCount<<endl;
 			}
 			else
 			{
@@ -1798,12 +1768,12 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 			//dna decoder
 			blockSize = _dnaBlockSizes[i];
 			sequenceCount = _dnaBlockSizes[i+1];
+			cout<<"file_pos_dna: "<<_filePosDna<<endl;
+                        cout<<"blockSize: "<<blockSize<<endl;
+                        cout<<"sequenceCount: "<<sequenceCount<<endl;
 			ddecoder = dnadecoders[j];
 			ddecoder->setup(_filePosDna, blockSize, sequenceCount);
 			_filePosDna += blockSize;
-			cout<<"file_pos_dna: "<<_filePosDna<<endl;
-			cout<<"blockSize: "<<blockSize<<endl;
-			cout<<"sequenceCount: "<<sequenceCount<<endl;
 			//qual decoder setup
 			//here test if in fastq mode, put null pointer otherwise
 			if(! _isFasta)
@@ -1811,11 +1781,11 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 				blockSize = _qualBlockSizes[i];
 				sequenceCount = _qualBlockSizes[i+1];
 				qdecoder = qualdecoders[j];
+				cout<<"file_posQual: "<<_filePosQual<<endl;
+                                cout<<"blockSize: "<<blockSize<<endl;
+                                cout<<"sequenceCount: "<<sequenceCount<<endl;
 				qdecoder->setup(_filePosQual, blockSize, sequenceCount);
 				_filePosQual += blockSize;
-				cout<<"file_posQual: "<<_filePosQual<<endl;
-                        	cout<<"blockSize: "<<blockSize<<endl;
-                        	cout<<"sequenceCount: "<<sequenceCount<<endl;
 			}
 			else
 			{
@@ -1828,9 +1798,9 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 			targ[j].header_decoder = hdecoder;
 			
 			pthread_create(&tab_threads[j], NULL, decoder_all_thread, targ + j);
-			i += 2;
 			this->_progress_decode->inc(1);
 		}
+		cout<<"Living Threads: "<<livingThreadCount<<endl;
 		for(int j=0; j < livingThreadCount; j++){
 			
 			pthread_join(tab_threads[j], NULL);
@@ -1893,7 +1863,6 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 					}
 					else
 						reading = false;
-					cout<<"Header size: "<<output_buff.size()<<endl;
 				}
 				else
 				{
@@ -1903,17 +1872,13 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 						output_buff += "@ " + sint.str() + '\n';
 					
 					readid++;
-					cout<<"fasta: "<<output_buff.size()<<endl;
-				}
-				
-				
+				}								
 				if(getline(stream_dna, line)){
 					output_buff +=  line + '\n';
 				}
 				else
-					reading = false;
-				
-				cout<<"dna: "<<output_buff.size()<<endl;				
+					reading = false;				
+				//cout<<"dna: "<<output_buff.size()<<endl;				
 				if( ! _isFasta)
 				{
 					if(getline(*stream_qual, line)){
@@ -1922,19 +1887,30 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 					}
 					else
 						reading = false;
-					cout<<"fastq: "<<output_buff.size()<<endl;
+				//	cout<<"fastq: "<<output_buff.size()<<endl;
 				}
 				read_size += output_buff.size();
-				 
 			}
-			cout<<"final size: "<< output_buff.size()<<endl;	
-			memcpy(buf, output_buff.c_str(), 4096); 
+			if(i==fromBlock && i==toBlock){	
+				cout<<"bufOff: "<< bufOff<<endl;
+				output_buff.copy(buf+bufOff,toOff - fromOff, fromOff);
+				bufOff += toOff - fromOff;
+				cout<<"bufOff: "<< bufOff<<endl;
+			}else if(i==fromBlock){
+				output_buff.copy(buf+bufOff, output_buff.size()-fromOff, fromOff);
+				bufOff += output_buff.size()-fromOff;
+			}else if(i==toBlock){
+				output_buff.copy(buf+bufOff, toOff, 0);
+				bufOff += toOff;
+			}else{
+				output_buff.copy(buf+bufOff, output_buff.size(), 0);
+				bufOff += output_buff.size();
+			}
+			cout<<"bufOff: "<< output_buff.size()<<endl;
 			//_outputFile->fwrite(output_buff.c_str(), output_buff.size(), 1);
 
 			if(stream_qual!= NULL) delete  stream_qual;
 			if(stream_header!= NULL) delete  stream_header;
-			
-			
 		}
 		
 		livingThreadCount = 0;
@@ -1969,7 +1945,7 @@ void Leon::startDecompressionAllStreams(int off, char* buf){
 	_progress_decode->finish();
 	
 	delete _kmerModel;
-
+	return bufOff;
 }
 
 
@@ -1985,6 +1961,7 @@ void Leon::setupNextComponent( 		vector<u_int64_t>   & blockSizes    ){
 	for(int i=0; i<_blockCount; i++){
 		u_int64_t blockSize = CompressionUtils::decodeNumeric(_rangeDecoder, _numericModel);
 		blockSizes.push_back(blockSize);
+		//cout<<"BlockSizes: "<<blockSize<<endl;
 		//size += blockSize;
 	}
 	

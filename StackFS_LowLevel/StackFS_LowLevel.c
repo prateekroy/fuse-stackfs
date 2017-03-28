@@ -1,6 +1,6 @@
 #define FUSE_USE_VERSION 30
 #define _XOPEN_SOURCE 500
-#define _GNU_SOURCE
+//#define _GNU_SOURCE
 #include <stdarg.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -500,8 +500,8 @@ void free_hash_table(struct lo_data *lo_data)
 {
 	struct lo_inode *node, *next;
 	int i;
-
-	for (i = 0; i < lo_data->hash_table.size; i++) {
+	int size = lo_data->hash_table.size;
+	for (i = 0; i < size; i++) {
 		node = lo_data->hash_table.array[i];
 		while (node) {
 			next = node->next;
@@ -1168,7 +1168,7 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 					lo_name(req, ino), offset, size);
 
 		generate_start_time(req);
-		buf.buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK;
+		buf.buf[0].flags = fuse_buf_flags(FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK);
 		buf.buf[0].fd = fi->fh;
 		buf.buf[0].pos = offset;
 		generate_end_time(req);
@@ -1340,10 +1340,9 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
                 	file_name[file_name_len+TXT_EXT_LEN] = '\0';
                 	StackFS_trace("The file name: %s", file_name);
 			if(g_hash_table_lookup(directory_list, file_name)==NULL){
-				struct stat st = {
-                        		st_ino:d->entry->d_ino,
-                        		st_mode:d->entry->d_type << 12
-                		};
+				struct stat st = {};
+                        	st.st_ino = d->entry->d_ino;
+                        	st.st_mode = d->entry->d_type << 12;
                 		entsize = fuse_add_direntry(req, p, rem,
                                         	file_name, &st, nextoff);
 				if (entsize > rem)
@@ -1355,10 +1354,9 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 			}
 		}
 		if(g_hash_table_lookup(directory_list, d->entry->d_name)==NULL){
-			struct stat st = {
-				st_ino:d->entry->d_ino,
-				st_mode:d->entry->d_type << 12
-			};
+			struct stat st = {};
+			st.st_ino = d->entry->d_ino;
+			st.st_mode = d->entry->d_type << 12;
 			entsize = fuse_add_direntry(req, p, rem,
 					d->entry->d_name, &st, nextoff);
 	/* The above function returns the size of the entry size even though
@@ -1755,8 +1753,8 @@ static void stackfs_ll_getxattr(fuse_req_t req, fuse_ino_t ino,
 }
 #endif
 
-static struct fuse_lowlevel_ops hello_ll_oper = {
-	lookup	:stackfs_ll_lookup,
+static struct fuse_lowlevel_ops hello_ll_oper = {};
+/*	lookup	:stackfs_ll_lookup,
 	forget  :stackfs_ll_forget,
 	getattr	:stackfs_ll_getattr,
 	setattr :stackfs_ll_setattr,
@@ -1781,7 +1779,7 @@ static struct fuse_lowlevel_ops hello_ll_oper = {
 	write_buf:	stackfs_ll_write_buf,
 #endif
 	forget_multi:   stackfs_ll_forget_multi
-};
+};*/
 
 struct stackFS_info {
 	char	*rootDir;
@@ -1832,7 +1830,31 @@ int main(int argc, char **argv)
 	char *resolved_statsDir = NULL;
 	char *resolved_rootdir_path = NULL;
 	int multithreaded;
-	hello_ll_oper.lookup = stackfs_ll_lookup;
+	hello_ll_oper.lookup  = stackfs_ll_lookup;
+        hello_ll_oper.forget  = stackfs_ll_forget;
+        hello_ll_oper.getattr = stackfs_ll_getattr;
+        hello_ll_oper.setattr = stackfs_ll_setattr;
+        hello_ll_oper.mkdir   = stackfs_ll_mkdir;
+        hello_ll_oper.unlink  = stackfs_ll_unlink;
+        hello_ll_oper.rmdir   = stackfs_ll_rmdir;
+        hello_ll_oper.open    = stackfs_ll_open;
+        hello_ll_oper.read    = stackfs_ll_read;
+        hello_ll_oper.write   = stackfs_ll_write;
+        hello_ll_oper.flush   = stackfs_ll_flush;
+        hello_ll_oper.release = stackfs_ll_release;
+        hello_ll_oper.fsync   = stackfs_ll_fsync;
+        hello_ll_oper.opendir = stackfs_ll_opendir;
+        hello_ll_oper.readdir = stackfs_ll_readdir;
+        hello_ll_oper.releasedir = stackfs_ll_releasedir;
+        hello_ll_oper.statfs  = stackfs_ll_statfs;
+#if     TESTING_XATTR
+        hello_ll_oper.getxattr = stackfs_ll_getxattr;
+#endif
+        hello_ll_oper.create = stackfs_ll_create;
+#if     USE_SPLICE
+        hello_ll_oper.write_buf = stackfs_ll_write_buf;
+#endif
+        hello_ll_oper.forget_multi = stackfs_ll_forget_multi;
 	file_table = g_hash_table_new(g_str_hash, g_str_equal);
 	file_cache = g_hash_table_new(g_str_hash, g_str_equal);
 	file_node_head = (struct file_node*) malloc(sizeof(struct file_node));
@@ -1845,7 +1867,7 @@ int main(int argc, char **argv)
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 	/*Default attr valid time is 1 sec*/
 	struct stackFS_info s_info = {NULL, NULL, 1.0, 0, 0};
-
+	struct lo_data *lo = NULL;
 	res = fuse_opt_parse(&args, &s_info, stackfs_opts, stackfs_process_arg);
 
 	if (res) {
@@ -1877,7 +1899,6 @@ int main(int argc, char **argv)
 	}
 
 	rootDir = s_info.rootDir;
-	struct lo_data *lo = NULL;
 
 	if (rootDir) {
 		lo = (struct lo_data *) calloc(1, sizeof(struct lo_data));
@@ -1982,16 +2003,20 @@ int main(int argc, char **argv)
 out4:
 	if (resolved_rootdir_path)
 		free(resolved_rootdir_path);
+	
 out3:
 	if (lo)
 		free(lo);
+
 out2:
 	if (resolved_statsDir)
 		free(resolved_statsDir);
+	
 out1:
 	if(file_node_head !=NULL)
 		free(file_node_head);
 	if(file_node_end !=NULL)
 		free(file_node_end);
 	return res;
+     
 }
