@@ -196,8 +196,10 @@ class Leon : public misc::impl::Tool
 		static int bin2nt(int nt){
 			return bin2ntTab[nt];
 		}
-		int executeDecompression(int off, char* buf, int size);
-	
+		vector<string>* executeDecompression(int s_block, int e_block); //pass starting and ending block number
+		void readConfig();	
+		int findBlockId(int off, int &blockOff);
+
 	private:
 
 		u_int64_t _lastAnchorValue;
@@ -209,7 +211,6 @@ class Leon : public misc::impl::Tool
 		ofstream* _dictAnchorFile;
 		int _nks;
 		 
-		void readConfig();
 		void execute ();
 		void createBloom ();
 		//void createKmerAbundanceHash();
@@ -244,7 +245,6 @@ class Leon : public misc::impl::Tool
 		void endCompression();
 		void saveConfig();
 		void endQualCompression();
-		int findBlockId(int off, int &blockOff);
 	
 		//Global decompression
 		void setupNextComponent(vector<u_int64_t>   & blockSizes  );
@@ -266,7 +266,7 @@ class Leon : public misc::impl::Tool
 		u_int64_t _filePosQual;
 
 	
-		int startDecompressionAllStreams(int off, char* buf, int size);
+		vector<string>* startDecompressionAllStreams(int s_block, int e_block); //pass starting and ending block
 	
 		//Header compression
 		void startHeaderCompression();

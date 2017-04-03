@@ -44,16 +44,23 @@ GHashTable* file_table;
 GHashTable* file_cache;
 struct file_node{
 	char file_name[PATH_MAX];
+	Leon *leon;
 	struct file_node* next;
 	struct file_node* prev;
 };
 struct file_node* file_node_head, *file_node_end;
 struct file_pages{
-        char file_page[PG_SIZE];
-	int offset;	
+        char* file_page;
+	Leon *leon;
+	int s_off;
+        int e_off;
+        int block_id;
+        int dirty;
+        bool sequenceAdded;
 	struct file_pages* prev_page;
         struct file_pages* next_page;
 };
+
 
 void print_usage(void)
 {
@@ -953,18 +960,24 @@ static void decompress_store(char * name, int fd){
 	if(!g_hash_table_contains(file_table,key)){
 		struct file_pages * fp = (struct file_pages*) malloc(sizeof(struct file_pages));
         	struct file_pages * current = fp;
-        	int off = 0;
 		fp->prev_page = NULL;
 		fp->next_page = NULL;
-		fp->offset = 0;
 		char* file_name = change_file_ext(name, ".leon");
-		Leon leon;
-		leon.run(6, prep_args(file_name,false));
-		leon.executeDecompression(offSet, current->file_page, PG_SIZE);
+		Leon* leon = new Leon();
+		leon->run(6, prep_args(file_name,false));
+		vector<string>* out =leon->executeDecompression(0, 0);
+		current->file_page = (char *) malloc ((*out)[0].size()+1);
+		strcpy(current->file_page,(*out)[0].c_str());
 		offSet = strlen(current->file_page)+1;
-		current->offset = offSet;
-		StackFS_trace("decompress data: %s", current->file_page);	
+		current->s_off = 0;
+		current->e_off = (*out)[0].size();
+		current->block_id = 0;
+		current->leon = leon;
+		current->dirty = 0;
+		current->sequenceAdded = false;
+		//StackFS_trace("decompress data: %s", current->file_page);	
 		pthread_spin_lock(&spinlock);
+		delete out;
 		g_hash_table_insert(file_table, key, fp);
 		pthread_spin_unlock(&spinlock);
 	}else{
@@ -1209,76 +1222,101 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			struct file_pages* fp = (struct file_pages*)g_hash_table_lookup (file_table, name);
 			struct file_pages* current = fp;
 			struct file_pages* start = fp;
+			struct file_pages* end = fp;
+			Leon* leon = fp->leon;
+			bool block_found = false;
                 	int page_no = offset/PG_SIZE;
 			int page_off = offset%PG_SIZE;
 			int end_off = page_off+size;
+			vector<string>* out;
+			int fromOff = 0, toOff = 0, bufOff = 0;
 			int end_page = (offset+size)/PG_SIZE;
-			StackFS_trace("The file name: %s already cached endoff %d", name, end_off);
-			while(current!=NULL && current->next_page!=NULL && page_no > 0){
-				current = current->next_page;
-				start = start->next_page;
-				page_no--;
-				end_page--;
-			}
-			if(current!=NULL && current->next_page == NULL && end_page >= 1){
-				char * point = NULL;
-				int bytes_read = PG_SIZE;
-				StackFS_trace("The file name: %s", name);
-				char * file_name;
-				if((point = strrchr(name,'.')) != NULL) {
-					struct stat buffer;
-					int file_name_len = strlen(name)-strlen(point);
-					file_name = (char *) malloc(file_name_len+EXT_LEN+1);
-					strncpy(file_name, name, file_name_len);
-					strncpy(file_name+file_name_len, EXT, EXT_LEN);
-					file_name[file_name_len+EXT_LEN] = '\0';
-					StackFS_trace("Reading more data from file: %s", file_name);
+			leon->readConfig();
+                        int fromBlock = leon->findBlockId(offset, fromOff);
+                        int toBlock = leon->findBlockId(offset+size, toOff);
+			StackFS_trace("The from block: %d to block %d", fromBlock, toBlock);
+			while(current!=NULL){
+				if(current->block_id == fromBlock){
+					start = current;
+					for(int i=fromBlock;i<toBlock && current!=NULL;i++){
+						if(current->block_id == i)
+							current = current->next_page;
+						else{
+							end = current;
+							break;
+						}
+					}
+					if(current!=NULL && current->block_id == toBlock){
+						block_found = true;
+						end = current->next_page;
+					}else if(current == NULL)
+						end = current;
+					break;
 				}
-				while(bytes_read == PG_SIZE && end_page!=0){
-					StackFS_trace("fd generated and offset: %d", current->offset);
+				if(current->block_id>fromBlock){
+					end = current;
+					start = current->prev_page;
+					break;
+				}
+				start = current;
+                                current = current->next_page;
+			}
+			if(start!=NULL && !block_found){
+                                out = leon->executeDecompression(fromBlock, toBlock);
+				current = start;
+				//while(bytes_read == PG_SIZE && end_page!=0){
+				for(int i=fromBlock;i<= toBlock;i++){
+					StackFS_trace(" populating block id: %d", current->block_id);
+					if(current->block_id == i - 1 && end!=NULL
+							&& end->block_id == i){
+						current->next_page = end;
+						current = current->next_page;
+						end = end->next_page;	
+					}else{
+					int index = i-fromBlock;
 					current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
 					current->next_page->prev_page = current;
 					current->next_page->next_page = NULL;
-					current->next_page->offset= current->offset;
 					current = current->next_page;
-					//bytes_read = pread(fd, current->file_page, PG_SIZE, current->offset);
-					Leon leon;
-					leon.run(6, prep_args(file_name,false));
-					bytes_read = leon.executeDecompression(current->offset, 
-								current->file_page, PG_SIZE);
-                			current->offset += bytes_read;
-					end_page--;
+					current->file_page = (char *) malloc ((*out)[index].size()+1);
+                			strcpy(current->file_page,(*out)[index].c_str());
+                			int page_size = strlen(current->file_page)+1;
+                			current->s_off = page_size - fromOff;
+                			current->e_off = current->s_off + (*out)[index].size();
+                			current->block_id = i;
+               	 			current->leon = leon;
+                			current->dirty = 0;
+                			current->sequenceAdded = false;
+					}
 				}
-				while(page_no>0 && start->next_page!=NULL){
+				delete out;
+				/*while(page_no>0 && start->next_page!=NULL){
 					start = start->next_page;
 					page_no--;
 				}
-				current->next_page = NULL;
-				StackFS_trace("decompress data: %s", current->file_page);
+				current->next_page = NULL;*/
+				//StackFS_trace("decompress data: %s", current->file_page);
 			}
 			if(start!=NULL){
-				if(end_off<=PG_SIZE){
-					 memcpy(buf, start->file_page+page_off, size);
+				if(fromBlock == toBlock){
+					 memcpy(buf, start->file_page+fromOff, size);
 					 res = size;
-					 StackFS_trace("Data: %s", buf);
+					 //StackFS_trace("Data: %s", buf);
 				}else{
-					memcpy(buf, start->file_page+page_off, PG_SIZE-page_off);
-					end_off -= (PG_SIZE-page_off);
+					memcpy(buf, start->file_page+fromOff, strlen(start->file_page)-fromOff);
 					start = start->next_page;
-					int buf_off = PG_SIZE-page_off;
-					while(start!=NULL && end_off>=PG_SIZE){
-						memcpy(buf+buf_off, start->file_page ,PG_SIZE); 
-						end_off -= PG_SIZE;
-						buf_off+= PG_SIZE;
+					bufOff += strlen(start->file_page)-fromOff;
+					for(int i=fromBlock+1;i<toBlock && start!=NULL; i++){
+						memcpy(buf+bufOff, start->file_page ,strlen(start->file_page)); 
+						bufOff+= strlen(start->file_page);
 						start = start->next_page;
 					}
 					if(start!=NULL){
-						memcpy(buf+buf_off, start->file_page, end_off);
-						buf_off += end_off;
-						end_off = 0;
+						memcpy(buf+bufOff, start->file_page, toOff);
+						bufOff += toOff;
 					}
 					StackFS_trace("Data: %s", buf);
-					res = buf_off;
+					res = bufOff;
 				}
 			}
         	}else{	
@@ -1483,26 +1521,25 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 				}
 			}
 			while(bytes_read == PG_SIZE && end_page!=0){
-				StackFS_trace("fd generated and offset: %d %d", fd, current->offset);
 				current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
 				current->next_page->prev_page = current;
 				current->next_page->next_page = NULL;
-				current->next_page->offset= current->offset;
+				//current->next_page->offset= current->offset;
 				current = current->next_page;
-				bytes_read = pread(fd, current->file_page, PG_SIZE, current->offset);
+				//bytes_read = pread(fd, current->file_page, PG_SIZE, current->offset);
 				int off = 0;
 				while(off<bytes_read){
 					current->file_page[off] +=1;
 					off++;
 				}
-				current->offset+=bytes_read;
+				//current->offset+=bytes_read;
 				end_page--;
 			}
 			while(end_page!=0){
 				current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
                                 current->next_page->prev_page = current;
                                 current->next_page->next_page = NULL;
-                                current->next_page->offset= current->offset;
+                                //current->next_page->offset= current->offset;
                                 current = current->next_page;
                                 end_page--;
 			}	

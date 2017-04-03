@@ -1485,7 +1485,7 @@ void * decoder_qual_thread(void * args)
 	pthread_exit(0);
 }
 
-int Leon::executeDecompression(int off, char* buf, int size){
+vector<string>* Leon::executeDecompression(int s_block, int e_block){
 	
 	_filePos = 0;
 	
@@ -1590,8 +1590,8 @@ int Leon::executeDecompression(int off, char* buf, int size){
 	//		cout << "\tWarning diff version "   << endl;
 	//	}
 	
-	readConfig();
-	int ret = startDecompressionAllStreams(off, buf, size);
+	
+	vector<string>* ret = startDecompressionAllStreams(s_block, e_block);
 	
 	/*
 	 startHeaderDecompression();
@@ -1602,7 +1602,7 @@ int Leon::executeDecompression(int off, char* buf, int size){
 	 }
 	 */
 	
-	endDecompression();
+	//endDecompression();
 	return ret;
 }
 
@@ -1633,7 +1633,7 @@ int Leon::findBlockId(int off, int &blockOff){
 	return blockId;
 }
 
-int Leon::startDecompressionAllStreams(int off, char* buf, int size){
+vector<string>* Leon::startDecompressionAllStreams(int s_block, int e_block){
 	
 	_filePosHeader = 0;
 	_filePosDna = 0;
@@ -1724,14 +1724,10 @@ int Leon::startDecompressionAllStreams(int off, char* buf, int size){
 	}
 	pthread_t * tab_threads = new pthread_t [_nb_cores];
 	thread_arg_decoder *  targ = new thread_arg_decoder [_nb_cores];
-	cout<<endl<<"offset: "<<off<<endl;
 	int i = 0;
 	int livingThreadCount = 0;
-	int fromOff = 0, toOff = 0, bufOff = 0;
-	int fromBlock = findBlockId(off, fromOff);
-	int toBlock = findBlockId(off+size, toOff);
-	cout<<endl<<"dna sizes: "<<_dnaBlockSizes.size()<<endl;
-	for(int i=fromBlock;i<=toBlock && i < _dnaBlockSizes.size();i++){
+	vector<string> * out = new vector<string>();
+	for(int i=s_block;i<=e_block && i < _dnaBlockSizes.size();i++){
 		
 		for(int j=0; j<_nb_cores; j++){
 			
@@ -1891,22 +1887,9 @@ int Leon::startDecompressionAllStreams(int off, char* buf, int size){
 				}
 				read_size += output_buff.size();
 			}
-			if(i==fromBlock && i==toBlock){	
-				cout<<"bufOff: "<< bufOff<<endl;
-				output_buff.copy(buf+bufOff,toOff - fromOff, fromOff);
-				bufOff += toOff - fromOff;
-				cout<<"bufOff: "<< bufOff<<endl;
-			}else if(i==fromBlock){
-				output_buff.copy(buf+bufOff, output_buff.size()-fromOff, fromOff);
-				bufOff += output_buff.size()-fromOff;
-			}else if(i==toBlock){
-				output_buff.copy(buf+bufOff, toOff, 0);
-				bufOff += toOff;
-			}else{
-				output_buff.copy(buf+bufOff, output_buff.size(), 0);
-				bufOff += output_buff.size();
-			}
-			cout<<"bufOff: "<< output_buff.size()<<endl;
+			string block (output_buff);
+			cout<<"bufOff: "<< block.size()<<endl;
+			out->push_back(block);
 			//_outputFile->fwrite(output_buff.c_str(), output_buff.size(), 1);
 
 			if(stream_qual!= NULL) delete  stream_qual;
@@ -1945,7 +1928,7 @@ int Leon::startDecompressionAllStreams(int off, char* buf, int size){
 	_progress_decode->finish();
 	
 	delete _kmerModel;
-	return bufOff;
+	return out;
 }
 
 
