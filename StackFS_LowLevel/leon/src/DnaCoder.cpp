@@ -330,8 +330,8 @@ void DnaEncoder::operator()(Sequence& sequence){
 	_readseq = _sequence->getDataBuffer();
 		
 	_totalDnaSize += _readSize;
-	cout<<"Read Size: "<<_readSize<<endl;
-	cout<<"seq id: "<<_seqId<<endl;
+	//cout<<"Read Size: "<<_readSize<<endl;
+	//cout<<"seq id: "<<_seqId<<endl;
 	_leon->_dnaSeqSize->push_back(_readSize);
 	//_lastSequenceIndex = sequence->getIndex();
 	

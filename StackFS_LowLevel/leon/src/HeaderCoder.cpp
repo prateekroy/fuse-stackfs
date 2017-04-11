@@ -321,8 +321,8 @@ void HeaderEncoder::operator()(Sequence& sequence){
 	_currentHeader = sequence.getComment();
 	
 	_totalHeaderSize += _currentHeader.size();
-	cout<<"Header Size: "<<_currentHeader.size()<<endl;
-	cout<<"Sequence Id: "<<_seqId<<endl;
+	//cout<<"Header Size: "<<_currentHeader.size()<<endl;
+	//cout<<"Sequence Id: "<<_seqId<<endl;
 	_leon->_headSeqSize->push_back(_currentHeader.size());
 	processNextHeader();
 	

@@ -67,6 +67,7 @@ TODO
 #define C_FILES "files"
 #define C_FILE "file_name"
 #define SEQ "seq"
+#define BLOCK "block"
 #define HEAD "head"
 #define DNA "dna"
 #define QUAL "qual"
@@ -714,11 +715,15 @@ void Leon::writeBlock(u_int8_t* data, u_int64_t size, int encodedSequenceCount,u
 	
 }
 
-void Leon::readConfig(){
-	string dir = System::file().getDirectory(_inputFilename);
-        string configFileName = dir+"/"+CONFIG;
+void Leon::readConfig(char* config_file, char* input){
+        string configFileName(config_file);
         struct stat configFile;
-	string inFile = System::file().getBaseName(_inputFilename);
+	string inFile;
+	if(input!=NULL){
+		inFile.assign(input);
+		inFile.assign(System::file().getBaseName(inFile)); 
+	}else
+		inFile.assign(System::file().getBaseName(_inputFilename));
         Config cfg;
         if(stat(configFileName.c_str(), &configFile) != 0){
 		cout<<"file not found in "<<configFileName.c_str()<<endl;
@@ -733,21 +738,27 @@ void Leon::readConfig(){
 		string name;
 		if(file.lookupValue(C_FILE, name) && 
 			strcmp(name.c_str(), inFile.c_str())==0) {
-			const Setting &seq = file[SEQ];
-			int cnt = seq.getLength();
+			const Setting &block = file[2];
+			int cnt = block.getLength();
+                        for(int j=0;j<cnt;j++){
+                                block_sizes->push_back(block[j]);
+                        }
+			const Setting &seq = file[1];
+			cnt = seq.getLength();
 			for(int j=0;j<cnt;j++){
 				_seqCount->push_back(seq[j]);
 			}
-			const Setting &head = file[2];
-			const Setting &dna = file[3];
+			const Setting &head = file[3];
+			const Setting &dna = file[4];
 			cnt = dna.getLength();
 			for(int j=0;j<cnt;j++){
-                                _headSeqSize->push_back(head[j]);
+				if(! _noHeader)
+                                	_headSeqSize->push_back(head[j]);
 				_dnaSeqSize->push_back(dna[j]);
                         }
 			if(! _isFasta)
         		{
-				const Setting &qual = file[4];
+				const Setting &qual = file[5];
 				cnt = qual.getLength();
 				for(int j=0;j<cnt;j++){
                                 	_qualSeqSize->push_back(qual[j]);
@@ -756,6 +767,14 @@ void Leon::readConfig(){
 			break;	 
 		}
 	}
+}
+
+int Leon::getFileSize(char* config_file, char* input){
+	readConfig(config_file, input);
+	int size = 0;
+        for(int i=0;i<block_sizes->size();i++)
+        	size += (*block_sizes)[i];
+	return size;
 }
 
 void Leon::saveConfig(){
@@ -788,11 +807,25 @@ void Leon::saveConfig(){
 	Setting &file = files.add(System::file().getBaseName(_inputFilename), Setting::TypeGroup);
 	if(!file.exists(C_FILE)){
 		Setting &name = file.add(C_FILE, Setting::TypeString);
-		name =  _inputFilename.c_str();
+		name =  System::file().getBaseName(_inputFilename);
 	}
 	Setting &seq = file.add(SEQ, Setting::TypeList);
 	if(_headSeqSize->size()%READ_PER_BLOCK !=0)
 		_seqCount->push_back(_headSeqSize->size()%READ_PER_BLOCK );
+	int k =0;
+	Setting &blockSize  = file.add(BLOCK, Setting::TypeList);
+	for(int i=0;i<_seqCount->size();i++){
+		int size = 0;
+		for(int j=0;j<(*_seqCount)[i] && k< _dnaSeqSize->size();j++, k++){
+			size += (*_dnaSeqSize)[k];
+			if(! _noHeader)
+				size+= (*_headSeqSize)[k];	
+			if(!_isFasta)
+				size+= (*_qualSeqSize)[k];
+		}
+		cout<<"size: "<<size<<endl;
+		blockSize.add(Setting::TypeInt)= size;
+	}
         for ( int i = 0; i < _seqCount->size(); i++ ) {
                 seq.add(Setting::TypeInt) = (*_seqCount)[i];
         }
@@ -804,10 +837,12 @@ void Leon::saveConfig(){
         for ( int i = 0; i < _dnaSeqSize->size(); i++ ) {
                 dna.add(Setting::TypeInt) = (*_dnaSeqSize)[i];
         }
-	Setting &qual = file.add(QUAL, Setting::TypeList);
-        for ( int i = 0; i < _qualSeqSize->size(); i++ ) {
-                qual.add(Setting::TypeInt) = (*_qualSeqSize)[i];
-        }
+	if(!_isFasta){
+		Setting &qual = file.add(QUAL, Setting::TypeList);
+       	 	for ( int i = 0; i < _qualSeqSize->size(); i++ ) {
+                	qual.add(Setting::TypeInt) = (*_qualSeqSize)[i];
+        	}
+	}
 	try
 	{
 		cout<<configFileName.c_str()<<endl;
@@ -1610,6 +1645,12 @@ int Leon::findBlockId(int off, int &blockOff){
 	int seqNo = 0;
 	int blockId = 0;
 	blockOff = 0;
+	while(seqNo < block_sizes->size() && off> (*block_sizes)[seqNo]){
+		off -= (*block_sizes)[seqNo];
+		seqNo++;
+		blockId++;
+	}
+	blockOff = off;/*
 	while(seqNo<_headSeqSize->size() ){
 		int seqSize = (*_headSeqSize)[seqNo] + (*_dnaSeqSize)[seqNo];
 		if(!_isFasta)
@@ -1628,7 +1669,7 @@ int Leon::findBlockId(int off, int &blockOff){
 			blockOff += off;
 			break;
 		}	
-	}
+	}*/
 	cout<<endl<<"block Id: "<<blockId<<" block Off: "<<blockOff<<endl;
 	return blockId;
 }
@@ -1727,7 +1768,9 @@ vector<string>* Leon::startDecompressionAllStreams(int s_block, int e_block){
 	int i = 0;
 	int livingThreadCount = 0;
 	vector<string> * out = new vector<string>();
-	for(int i=s_block;i<=e_block && i < _dnaBlockSizes.size();i++){
+	s_block *= 2;
+	e_block *=2;
+	for(int i=s_block;i<=e_block && i < _dnaBlockSizes.size();i=i+2){
 		
 		for(int j=0; j<_nb_cores; j++){
 			

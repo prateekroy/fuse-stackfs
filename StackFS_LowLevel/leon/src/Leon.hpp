@@ -88,6 +88,7 @@ class Leon : public misc::impl::Tool
 		vector<int>* _headSeqSize = new vector<int>();	
 		vector<int>* _qualSeqSize = new vector<int>();
 		vector<int>* _seqCount = new vector<int>();
+		vector<int>* block_sizes = new vector<int>();
 		static const char* STR_COMPRESS;
 		static const char* STR_DECOMPRESS;
 		static const char* STR_TEST_DECOMPRESSED_FILE;
@@ -197,7 +198,8 @@ class Leon : public misc::impl::Tool
 			return bin2ntTab[nt];
 		}
 		vector<string>* executeDecompression(int s_block, int e_block); //pass starting and ending block number
-		void readConfig();	
+		void readConfig(char* file, char* input);	
+		int getFileSize(char* config_file, char* input);
 		int findBlockId(int off, int &blockOff);
 
 	private:
