@@ -345,7 +345,7 @@ void DnaEncoder::operator()(Sequence& sequence){
 #endif
 
 	if(_processedSequenceCount >= Leon::READ_PER_BLOCK ){
-		_leon->_seqCount->push_back(_processedSequenceCount);
+		//_leon->seq_per_block->push_back(_processedSequenceCount);
 		cout<<"_processedSequenceCount: "<<_processedSequenceCount<<endl;
 		writeBlock();
 		startBlock();

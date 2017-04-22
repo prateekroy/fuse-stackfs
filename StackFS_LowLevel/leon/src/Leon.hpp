@@ -87,21 +87,32 @@ class Leon : public misc::impl::Tool
 		vector<int>* _dnaSeqSize = new vector<int>();
 		vector<int>* _headSeqSize = new vector<int>();	
 		vector<int>* _qualSeqSize = new vector<int>();
-		vector<int>* _seqCount = new vector<int>();
-		vector<int>* block_sizes = new vector<int>();
+		vector<int>* c_head_block = new vector<int>();
+		vector<int>* c_dna_block = new vector<int>();
+		vector<int>* c_qual_block = new vector<int>();
+		vector<int>* orig_block_size = new vector<int>();
+                vector<int>* seq_per_block = new vector<int>(); 
+		vector<string>* outputFileNames = new vector<string>();
 		static const char* STR_COMPRESS;
 		static const char* STR_DECOMPRESS;
 		static const char* STR_TEST_DECOMPRESSED_FILE;
 		static const char* STR_DNA_ONLY;
 		static const char* STR_NOHEADER;
 		static const char* STR_NOQUAL;
+		static const char* STR_COMPRESS_ENTIRE;
+		static const char* STR_COMPRESS_BLOCK;
+
+		string _inputFilename;
+                string _real_inputFilename;
+                string _outputFilename;
+                string _base_outputFilename;
 	
 		size_t          _kmerSize;
 		string     _dskOutputFilename;
 		static const int READ_PER_BLOCK = 3000;
 		int _nb_cores;
 		
-		bool _compress, _decompress;
+		bool _compress, _decompress, _compress_entire, _compress_block;
 		
 		clock_t _time; //Used to calculate time taken by decompression
 		
@@ -197,11 +208,14 @@ class Leon : public misc::impl::Tool
 		static int bin2nt(int nt){
 			return bin2ntTab[nt];
 		}
-		vector<string>* executeDecompression(int s_block, int e_block); //pass starting and ending block number
-		void readConfig(char* file, char* input);	
+		void executeCompression(int block_id,const char* data);
+		vector<string>* executeDecompression(int s_block); //pass starting and ending block number
+		void readConfig(char* file, char* input);
+		//void update_block_sizes(vector<int>* block_sizes, char* name);	
 		int getFileSize(char* config_file, char* input);
 		int findBlockId(int off, int &blockOff);
-
+		vector<int>* getBlockSizes();
+		void saveConfig();
 	private:
 
 		u_int64_t _lastAnchorValue;
@@ -217,11 +231,6 @@ class Leon : public misc::impl::Tool
 		void createBloom ();
 		//void createKmerAbundanceHash();
 		
-		//Global compression
-		string _inputFilename;
-		string _outputFilename;
-	
-
 	//quals
 	string _FileQualname;
 	IFile* _FileQual;
@@ -242,10 +251,9 @@ class Leon : public misc::impl::Tool
 
 		//u_int64_t _bloomSize;
 		
-		void executeCompression();
+		//void executeCompression();
 		//void executeDecompression();
 		void endCompression();
-		void saveConfig();
 		void endQualCompression();
 	
 		//Global decompression
@@ -268,12 +276,11 @@ class Leon : public misc::impl::Tool
 		u_int64_t _filePosQual;
 
 	
-		vector<string>* startDecompressionAllStreams(int s_block, int e_block); //pass starting and ending block
+		vector<string>* startDecompressionAllStreams(int s_block); //pass starting and ending block
 	
 		//Header compression
 		void startHeaderCompression();
 		void endHeaderCompression();
-	
 
 		//DNA Compression
 		void startDnaCompression();
