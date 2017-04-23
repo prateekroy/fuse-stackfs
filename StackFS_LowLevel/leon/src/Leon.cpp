@@ -521,32 +521,6 @@ void Leon::executeCompression(int block_id,const char* file_name){
     string dir = System::file().getDirectory(_inputFilename);
     string prefix = System::file().getBaseName(_inputFilename);
     //_outputFilename = dir + "/" + System::file().getBaseName(prefix) + ".leon";
-	if(_compress_block){
-                IBank* whole_bank = Bank::open(_inputFilename);
-                int64_t seqCount = whole_bank->estimateNbItems();
-                Iterator<Sequence>* itSeq = createIterator<Sequence> (
-                                                          whole_bank->iterator(),
-                                                          seqCount,
-                                                          "Creating Temp Files"
-                                                          );
-                int j = 0, size = 0;
-                itSeq->first();
-                while(! itSeq->isDone()){
-                        size += itSeq->item().getComment().size();
-                        string tmp(itSeq->item().getDataBuffer());
-                        size += tmp.size();
-                        tmp.clear();
-                        if(!_isFasta){
-                                size += itSeq->item().getQuality().size();
-                        }
-                        j++;
-                }
-                (*orig_block_size)[0] = size;
-                (*seq_per_block)[0] = j;
-                string file_name (_base_outputFilename);
-                file_name += "_"+to_string(block_id)+".leon";
-                (*outputFileNames)[0] = file_name;
-        }
 	_outputFilename = _base_outputFilename+"_"+to_string(block_id)+".leon";
 	_outputFile = System::file().newFile(_outputFilename, "wb");
         if(! _isFasta)

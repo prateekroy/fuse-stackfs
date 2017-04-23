@@ -345,7 +345,6 @@ void DnaEncoder::operator()(Sequence& sequence){
 #endif
 
 	if(_processedSequenceCount >= Leon::READ_PER_BLOCK ){
-		//_leon->seq_per_block->push_back(_processedSequenceCount);
 		cout<<"_processedSequenceCount: "<<_processedSequenceCount<<endl;
 		writeBlock();
 		startBlock();
@@ -359,6 +358,9 @@ void DnaEncoder::writeBlock(){
 	if(_rangeEncoder.getBufferSize() > 0){
 		_rangeEncoder.flush();
 	}
+	if(_leon->_compress_block){
+                        _leon->seq_per_block->push_back(_processedSequenceCount);
+        }
 	
 	int blockId = (  _seqId / Leon::READ_PER_BLOCK)   ;
 	//printf("\nTid %i  WB :  blockid %i sid %llu     size: %llu  _processedSequenceCount %i\n",_thread_id, blockId, _seqId, _rangeEncoder.getBufferSize(),_processedSequenceCount );
