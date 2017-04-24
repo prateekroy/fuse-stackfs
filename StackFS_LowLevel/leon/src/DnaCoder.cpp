@@ -503,7 +503,6 @@ void DnaEncoder::smoothQuals()
 	}
 	
 	strcpy(_bufferQuals + _bufferQuals_idx, _qualseq);
-	_leon->_qualSeqSize->push_back(_readSize);
 	_bufferQuals_idx += _readSize+1 ; // with last '\n'
 
 	//fprintf(_leon->_testQual,"%s",_qualseq); //st_qualseq.c_str()

@@ -137,13 +137,11 @@ static char** prep_args(char * name, bool compress, bool isFastq, int blockId){
 	strcpy(argv[4], "-b");
 	argv[5] = new char[33];
 	snprintf(argv[5], sizeof(argv[5]), "%d", blockId);
-	if(isFastq){
-		argv[6] = new char[8];
-		strcpy(argv[6],"-noqual");
+	if(compress){
+      	  	argv[6] = new char[10];
+       	 	strcpy(argv[6], "-lossless");
 	}
-        /*argv[4] = new char[10];
-        strcpy(argv[4], "-nb-cores");
-        argv[5] = new char[2];
+        /*argv[5] = new char[2];
         strcpy(argv[5], "1");*/
         return argv;
 }
@@ -1093,6 +1091,81 @@ static void decompress_store(char * name, int fd){
 		}
 	}
 }
+	
+static void splitFiles(Leon* leon,struct file_pages* current, string input, char* name){
+	int block_count = current->block_id;
+	bool isFasta = true;
+	string name_check(name);
+	string dir = System::file().getDirectory(input);
+	IBank* whole_bank = Bank::open(input);
+	int64_t seqCount = whole_bank->estimateNbItems();
+	string temp_file(".tmp_file_compress");
+	if(name_check.find(".fq") !=  string::npos 
+			|| name_check.find(".fastq") !=  string::npos){
+			isFasta = false;
+		temp_file += ".fq";
+	}else
+		temp_file += ".fa";
+	temp_file = dir+"/"+temp_file;
+	Iterator<Sequence>* itSeq = leon->createIterator<Sequence> (whole_bank->iterator(),seqCount,
+			"Creating Temp Files"
+			);
+	string line;
+	//leon->orig_block_size->clear();
+	//leon->seq_per_block->clear();
+	itSeq->first();
+	while(! itSeq->isDone()){
+		Leon *leon1  = new Leon();
+		char** args = prep_args(name,true,false, current->block_id);
+                leon1->run(6, args);
+		ofstream fout;
+		int j = 0, size = 0, readid = 0;
+		fout.open(temp_file.c_str());   //create a new file for each block
+		if (!fout.good()){
+			cerr << "I/O error while reading file." << endl;
+		}
+		while(! itSeq->isDone() && j < leon1->READ_PER_BLOCK)
+		{
+			stringstream sint;
+			sint << readid;
+			if( ! leon1->_noHeader)
+			{
+				string line = itSeq->item().getComment();
+				if(leon1->_isFasta)
+					fout<<">";
+				else
+					fout<<"@";
+				fout<<line<<'\n';
+			}
+			else
+			{
+				if(leon1->_isFasta)
+					fout<< "> "<<sint.str()<<'\n';
+				else
+					fout<< "@ "<<sint.str()<<'\n';
+				readid++;
+			}
+			fout<< itSeq->item().getDataBuffer()<<'\n';
+			if( ! leon1->_isFasta)
+			{
+				string line = itSeq->item().getQuality();
+				fout<<"+\n";
+				fout<<line + '\n';
+			}
+			j++;
+			itSeq->next();
+		}
+		leon1->orig_block_size->push_back(strlen(current->file_page));
+		//leon->seq_per_block->push_back(j);
+		//string file_name (leon->_base_outputFilename);
+		//file_name += "_"+to_string(block_count)+".leon";
+		//leon->outputFileNames->push_back(file_name);
+		fout.close();
+		leon1->executeCompression(block_count, temp_file.c_str());
+		block_count++;
+	}
+
+}
 
 static void compress_save(char * name){
 	char * point = NULL;
@@ -1106,12 +1179,13 @@ static void compress_save(char * name){
 			struct file_pages * fp = (struct file_pages*) g_hash_table_lookup(file_table, name);
 			struct file_pages * current = fp;
 			if(compression_type == 1){
-				Leon *leonWrite = new Leon();
 				char* tmp_name = createFile(name, TMP_FILE);
 				while(current!=NULL){
 					if(current->dirty != 0){
-						leonWrite->run(6, prep_args(name,true,
-                                                                false, current->block_id));
+						//Leon *leonWrite = new Leon();
+						//char** args = prep_args(name,true,
+						//		false, current->block_id);
+						//leonWrite->run(6, args);
 						string temp (tmp_name);
 						string name_check(name);
 						if(name_check.find(".fq")!=string::npos 
@@ -1120,10 +1194,16 @@ static void compress_save(char * name){
 						}else{
 							temp = temp+".fa";
 						}
-						int fd = open(temp.c_str(),O_RDWR|O_TRUNC|O_CREAT);
-						pwrite(fd, current->file_page, strlen(current->file_page), 0);
-						leonWrite->orig_block_size->push_back(strlen(current->file_page));
-						leonWrite->executeCompression(current->block_id, temp.c_str());
+						ofstream fout;
+						fout.open(temp.c_str());
+						//int fd = open(temp.c_str(),O_RDWR|O_TRUNC|O_CREAT);
+						//pwrite(fd, current->file_page, strlen(current->file_page), 0);
+						fout<<current->file_page;
+						fout.close();
+						splitFiles(current->leon, current, temp, name);
+						//leonWrite->orig_block_size->push_back(strlen(current->file_page));
+						//leonWrite->executeCompression(current->block_id, temp.c_str());
+						//delete leonWrite;
 					}
 					StackFS_trace("The flushed page: %s", current->file_page);
 					current = current->next_page;
@@ -1144,7 +1224,6 @@ static void compress_save(char * name){
 					}
 					StackFS_trace("The flushed page: %s", current->file_page);
 				}*/
-				delete leonWrite;
 			}else{
 				int fd = open(file_name.c_str(), O_RDWR);
 				int offset = 0;

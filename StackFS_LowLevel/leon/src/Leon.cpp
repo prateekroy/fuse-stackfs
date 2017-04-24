@@ -217,6 +217,53 @@ void Leon::execute()
 	_real_inputFilename = _inputFilename;
 	string dir = System::file().getDirectory(_inputFilename);
         _base_outputFilename = _inputFilename;
+	_noHeader =false;
+
+
+        if(getParser()->saw (Leon::STR_NOHEADER))
+        {
+                _noHeader = true;
+        }
+
+         if(getParser()->saw (Leon::STR_NOQUAL))
+        {
+                _isFasta = true;
+        }
+
+
+        if(getParser()->saw (Leon::STR_DNA_ONLY))
+        {
+                _noHeader = true;
+                _isFasta = true;
+        }
+	if(_inputFilename.find(".fq") !=  string::npos || _inputFilename.find(".fastq") !=  string::npos)
+        {
+                cout << "\tInput format: Fastq";
+
+                if(! getParser()->saw (Leon::STR_DNA_ONLY) && ! getParser()->saw (Leon::STR_NOQUAL))
+                {
+
+                        if (_lossless)
+                                cout << ", compressing qualities in lossless mode" << endl;
+                        else
+                                cout << ", compressing qualities in lossy mode (use -lossless for lossless compression)"<< endl;
+
+                        _isFasta = false;
+
+                }
+
+
+        } else if (_inputFilename.find(".fa") !=  string::npos || _inputFilename.find(".fasta") !=  string::npos) {
+                //#ifdef PRINT_DEBUG
+                cout << "\tInput format: Fasta" << endl;
+                //#endif
+                _isFasta = true;
+
+        }else
+        {
+                cout << "\tUnknown input extension. Input extension must be one among fasta (.fa, .fasta) or fastq (.fq, .fastq)" << endl;
+                return;
+        }
 	/*if(_compress_entire && _compress){
 		int block_count = 0;
 		IBank* whole_bank = Bank::open(_inputFilename);
@@ -552,9 +599,6 @@ void Leon::executeCompression(int block_id,const char* file_name){
 
 void Leon::endQualCompression(){
 	
-	for(int i = 0;i< _qualBlockSizes.size();i++){
-		c_qual_block->push_back(_qualBlockSizes[i]);
-	}	
 	//append blocks info at the end
 	_FileQual->fwrite(& _qualBlockSizes[0],  sizeof(u_int64_t) , _qualBlockSizes.size());
 

@@ -92,9 +92,9 @@ int main (int argc, char* argv[])
 			}
 			while(getline(fin, line))
 			{
-				if(isFasta && line.at(0)=='>')
+				if(isFasta && line.size()!=0 && line.at(0)=='>')
 					j++;
-				else if(!isFasta && line.at(0)=='@')
+				else if(!isFasta && line.size()!=0 && line.at(0)=='@')
 					j++;
 				if(j>leon->READ_PER_BLOCK){
 					j--;
