@@ -84,15 +84,8 @@ class Leon : public misc::impl::Tool
 		Leon();
 		~Leon();
 	
-		vector<int>* _dnaSeqSize = new vector<int>();
-		vector<int>* _headSeqSize = new vector<int>();	
-		vector<int>* _qualSeqSize = new vector<int>();
-		vector<int>* c_head_block = new vector<int>();
-		vector<int>* c_dna_block = new vector<int>();
-		vector<int>* c_qual_block = new vector<int>();
 		vector<int>* orig_block_size = new vector<int>();
                 vector<int>* seq_per_block = new vector<int>(); 
-		vector<string>* outputFileNames = new vector<string>();
 		static const char* STR_COMPRESS;
 		static const char* STR_DECOMPRESS;
 		static const char* STR_TEST_DECOMPRESSED_FILE;
