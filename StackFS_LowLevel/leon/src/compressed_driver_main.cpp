@@ -62,9 +62,11 @@ int main (int argc, char* argv[])
 			if(! leon->getParser()->saw (Leon::STR_DNA_ONLY) && ! leon->getParser()->saw (Leon::STR_NOQUAL)){
 				isFasta = false;
 			}
-			temp_file += ".fq";
-		}else
-			temp_file += ".fa";
+		}
+		if(isFasta)
+			temp_file += ".fasta";
+		else
+			temp_file += ".fastq";
 		if(leon->getParser()->saw (Leon::STR_NOHEADER))
 			noHeader = true;
 		temp_file = dir+"/"+temp_file;
@@ -112,8 +114,12 @@ int main (int argc, char* argv[])
                                         readid++;
 					size+= 2+sint.str().size()+1;
                                 }
-                                fout<< itSeq->item().getDataBuffer()<<'\n';
-				size+= strlen(itSeq->item().getDataBuffer())+1;
+				int dna_len = itSeq->item().getDataSize();
+				char dna[dna_len+1];
+				strncpy(dna, itSeq->item().getDataBuffer(), dna_len);
+				dna[dna_len] = '\0';
+                                fout<<dna<<'\n';
+				size+= dna_len+1;
 				if( !isFasta)
                                 {	
 					string line = itSeq->item().getQuality();                                       
@@ -130,7 +136,7 @@ int main (int argc, char* argv[])
 			leon1->executeCompression(block_count, temp_file.c_str());
 			block_count++;
 		}
-		//leon->saveConfig();
+		leon->saveConfig();
 	}
 	catch (gatb::core::system::Exception& e)
 	{

@@ -198,7 +198,6 @@ class DnaEncoder : AbstractDnaCoder
 		//u_int64_t _isPrevReadAnchorablePos;
 
 		vector<int> _solidMutaChain;
-		vector<int>* _dnaSeqSize = new vector<int>();
 		int _solidMutaChainPos;
 		u_int64_t _totalDnaSize;
 		u_int64_t _readCount;

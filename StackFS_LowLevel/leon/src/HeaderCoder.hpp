@@ -83,7 +83,6 @@ class AbstractHeaderCoder
 		vector<u_int64_t> _currentFieldZeroValues;
 		vector<HeaderType> _prevFieldTypes;
 		vector<HeaderType> _currentFieldTypes;
-		vector<int>* _headSeqSize = new vector<int>();
 		
 		bool _isCurrentFieldNumeric;
 		int _currentFieldCount;

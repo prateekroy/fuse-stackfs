@@ -133,7 +133,7 @@ _isFasta = true;
     getParser()->push_back (new OptionNoParam  ("-c", "compression",   false));
     getParser()->push_back (new OptionNoParam  ("-d", "decompression", false));
     getParser()->push_back (new OptionNoParam  ("-e", "compress entire file", false));
-    getParser()->push_back (new OptionOneParam ("-b", "block number to compress", false, "0"));
+    getParser()->push_back (new OptionNoParam  ("-b", "block number to compress", false));
     getParser()->push_back (new OptionOneParam (STR_NB_CORES, "number of cores (default is the available number of cores)", false, "0"));
     getParser()->push_back (new OptionOneParam (STR_VERBOSE,  "verbosity level",                                            false, "1", false));
 
@@ -209,7 +209,6 @@ void Leon::execute()
 	_compress_entire = true; 
     else
 	_compress_block = true; 
-    	block_id_to_compress = getInput()->getInt(STR_COMPRESS_BLOCK);
 	if((_compress && _decompress) || (!_compress && !_decompress)){
 		cout << "Choose one option among -c (compress) or -d (decompress)" << endl << endl;
 		return;
@@ -219,12 +218,20 @@ void Leon::execute()
 
 	u_int64_t total_nb_solid_kmers_in_reads = 0;
 	int nb_threads_living;
-	bool isFasta = true;
 	_nb_cores = getInput()->getInt(STR_NB_CORES);
 	_inputFilename = getInput()->getStr (STR_URI_FILE);
+	string base_name = System::file().getBaseName (_inputFilename);
 	_real_inputFilename = _inputFilename;
 	string dir = System::file().getDirectory(_inputFilename);
-	_base_outputFilename = _inputFilename;
+	if(_inputFilename.find(".fq") !=  string::npos || _inputFilename.find(".fastq") !=  string::npos)
+        {
+                if(! getParser()->saw (Leon::STR_DNA_ONLY) && ! getParser()->saw (Leon::STR_NOQUAL))
+                        _isFasta = false;
+        }
+	if(_isFasta)
+		_base_outputFilename = base_name+".fasta";
+	else
+		_base_outputFilename = base_name+".fastq";
 	_numericModel.clear();
 	for(int i=0; i<CompressionUtils::NB_MODELS_PER_NUMERIC; i++){
 		_numericModel.push_back(Order0Model(256));
@@ -745,7 +752,7 @@ void Leon::endCompression(){
 	std::cout.precision(2);
 	printf("\tTime: %.2fs\n", (  _wfin_leon - _wdebut_leon) );
 	printf("\tSpeed: %.2f mo/s\n", (System::file().getSize(_inputFilename)/1000000.0) / (  _wfin_leon - _wdebut_leon) );
-	saveConfig();
+	//saveConfig();
 }
 		
 
@@ -1351,8 +1358,8 @@ vector<string>* Leon::startDecompressionAllStreams(int s_block){
 	_qualBlockSizes.clear();
 	_inputFileQual->seekg(- sizeof(u_int64_t),_inputFileQual->end);
 	
-	//_inputFileQual->read((char *)&_blockCount,sizeof(u_int64_t));
-	//cout << "\tBlock count: " << _blockCount/2 << endl;
+	_inputFileQual->read((char *)&_blockCount,sizeof(u_int64_t));
+	cout << "\tBlock count: " << _blockCount/2 << endl;
 	_blockCount = _dnaBlockSizes.size();
 	
 	_qualBlockSizes.resize(_blockCount,0);
@@ -1555,6 +1562,7 @@ vector<string>* Leon::startDecompressionAllStreams(int s_block){
 						reading = false;
 				}
 			}
+			cout<<output_buff<<endl;
 			string block (output_buff);
 			cout<<"bufOff: "<< block.size()<<endl;
 			out->push_back(block);
