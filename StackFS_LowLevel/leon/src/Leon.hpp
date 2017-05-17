@@ -85,7 +85,9 @@ class Leon : public misc::impl::Tool
 		~Leon();
 	
 		vector<int>* orig_block_size = new vector<int>();
+		vector<int>* fasta_block_size = new vector<int>();
                 vector<int>* seq_per_block = new vector<int>(); 
+		vector<int>* fasta_seq_block = new vector<int>();
 		static const char* STR_COMPRESS;
 		static const char* STR_DECOMPRESS;
 		static const char* STR_TEST_DECOMPRESSED_FILE;
@@ -209,6 +211,7 @@ class Leon : public misc::impl::Tool
 		int findBlockId(int off, int &blockOff);
 		vector<int>* getBlockSizes();
 		void saveConfig();
+		void setBlockId(int block);
 	private:
 
 		u_int64_t _lastAnchorValue;

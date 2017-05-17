@@ -69,6 +69,8 @@ TODO
 #define BLOCK_C "block_count"
 #define SEQ "seq"
 #define BLOCK "block"
+#define FASTA "fasta"
+#define FASTQ "fastq"
 #define HEAD "head"
 #define DNA "dna"
 #define QUAL "qual"
@@ -215,9 +217,9 @@ void Leon::execute()
 	}
 
 	//getParser()->displayWarnings(); //pb si ici, affiche warnings apres exec dsk ,et prob option -c -d qui sont pas dans le parser car 'globales'
-
 	u_int64_t total_nb_solid_kmers_in_reads = 0;
 	int nb_threads_living;
+	_isFasta = true;
 	_nb_cores = getInput()->getInt(STR_NB_CORES);
 	_inputFilename = getInput()->getStr (STR_URI_FILE);
 	string base_name = System::file().getBaseName (_inputFilename);
@@ -229,9 +231,9 @@ void Leon::execute()
                         _isFasta = false;
         }
 	if(_isFasta)
-		_base_outputFilename = base_name+".fasta";
+		_base_outputFilename = dir+"/"+base_name+".fasta";
 	else
-		_base_outputFilename = base_name+".fastq";
+		_base_outputFilename = dir+"/"+base_name+".fastq";
 	_numericModel.clear();
 	for(int i=0; i<CompressionUtils::NB_MODELS_PER_NUMERIC; i++){
 		_numericModel.push_back(Order0Model(256));
@@ -540,7 +542,6 @@ void Leon::writeBlockLena(u_int8_t* data, u_int64_t size, int encodedSequenceCou
 	
 	
 	pthread_mutex_lock(&writeblock_mutex);
-	
 	_input_qualSize += size;
 	_compressed_qualSize +=  outstring.size();
 	if ((2*(blockID+1)) > _qualBlockSizes.size() )
@@ -582,6 +583,10 @@ void Leon::writeBlock(u_int8_t* data, u_int64_t size, int encodedSequenceCount,u
 	pthread_mutex_unlock(&writeblock_mutex);
 }
 
+void Leon::setBlockId(int block){
+	block_id_to_compress = block;
+}
+
 void Leon::readConfig(char* config_file, char* input){
         string configFileName(config_file);
         struct stat configFile;
@@ -605,17 +610,34 @@ void Leon::readConfig(char* config_file, char* input){
 		string name;
 		if(file.lookupValue(C_FILE, name) && 
 			strcmp(name.c_str(), inFile.c_str())==0) {
-			const Setting &block = file[2];
-			int cnt = block.getLength();
-			orig_block_size->clear();
-                        for(int j=0;j<cnt;j++){
-                                orig_block_size->push_back(block[j]);
-                        }
-			const Setting &seq = file[1];
-			cnt = seq.getLength();
-			seq_per_block->clear();
-			for(int j=0;j<cnt;j++){
-				seq_per_block->push_back(seq[j]);
+			if(_isFasta){
+				Setting &fasta = file[FASTA];
+				const Setting &block = fasta[1];
+				int cnt = block.getLength();
+				orig_block_size->clear();
+				for(int j=0;j<cnt;j++){
+					orig_block_size->push_back(block[j]);
+				}
+				const Setting &seq = fasta[0];
+				cnt = seq.getLength();
+				seq_per_block->clear();
+				for(int j=0;j<cnt;j++){
+					seq_per_block->push_back(seq[j]);
+				}
+			}else{
+				Setting &fastq = file[FASTQ];
+                                const Setting &block = fastq[1];
+                                int cnt = block.getLength();
+                                orig_block_size->clear();
+                                for(int j=0;j<cnt;j++){
+                                        orig_block_size->push_back(block[j]);
+                                }
+                                const Setting &seq = fastq[0];
+                                cnt = seq.getLength();
+                                seq_per_block->clear();
+                                for(int j=0;j<cnt;j++){
+                                        seq_per_block->push_back(seq[j]);
+                                }
 			}
 		}
 	}
@@ -660,25 +682,61 @@ void Leon::saveConfig(){
 	Setting &files = root[C_FILES];
 	if(files.exists(System::file().getBaseName(_real_inputFilename))){
 		Setting &file = files[System::file().getBaseName(_real_inputFilename)];
-                Setting &seq = file[SEQ];
-                Setting &blockSize  = file[BLOCK];
-		if(_compress_entire){
-			for(int i=0;i<seq_per_block->size();i++){
-				if(i< blockSize.getLength()){
-					blockSize[i]= (*orig_block_size)[i];
-					seq[i] = (*seq_per_block)[i];
+		if(_isFasta){
+			Setting &fasta = file[FASTA];
+                	Setting &seq = fasta[SEQ];
+                	Setting &blockSize  = fasta[BLOCK];
+			if(_compress_entire){
+				for(int i=0;i<seq_per_block->size();i++){
+					if(i< blockSize.getLength()){
+						blockSize[i]= (*orig_block_size)[i];
+						seq[i] = (*seq_per_block)[i];
+					}else{
+						blockSize.add(Setting::TypeInt) = (*orig_block_size)[i];
+                                		seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+					}
+				}
+			}else{
+				if(block_id_to_compress < blockSize.getLength()){
+					blockSize[block_id_to_compress] = (*orig_block_size)[0];
+					seq[block_id_to_compress] = (*seq_per_block)[0];
 				}else{
-					blockSize.add(Setting::TypeInt) = (*orig_block_size)[i];
-                                	seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+					blockSize.add(Setting::TypeInt) = (*orig_block_size)[0];
+					seq.add(Setting::TypeInt) = (*seq_per_block)[0];
 				}
 			}
 		}else{
-			if(block_id_to_compress < blockSize.getLength()){
-				blockSize[block_id_to_compress] = (*orig_block_size)[0];
-				seq[block_id_to_compress] = (*seq_per_block)[0];
-			}else{
-				blockSize.add(Setting::TypeInt) = (*orig_block_size)[0];
-				seq.add(Setting::TypeInt) = (*seq_per_block)[0];
+			if(!file.exists(FASTQ)){
+				Setting &fastq = file.add(FASTQ, Setting::TypeGroup);
+				Setting &seq = fastq.add(SEQ, Setting::TypeList);
+                        	Setting &blockSize  = fastq.add(BLOCK, Setting::TypeList);
+                        	for(int i=0;i<seq_per_block->size();i++){
+                                	blockSize.add(Setting::TypeInt)= (*orig_block_size)[i];
+                               	 	seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+                        	}
+			}else{	
+				Setting &fastq = file[FASTQ];
+				Setting &seq = fastq[SEQ];
+				Setting &blockSize  = fastq[BLOCK];
+				if(_compress_entire){
+					for(int i=0;i<seq_per_block->size();i++){
+						if(i< blockSize.getLength()){
+							blockSize[i]= (*orig_block_size)[i];
+							seq[i] = (*seq_per_block)[i];
+						}else{
+							blockSize.add(Setting::TypeInt) = (*orig_block_size)[i];
+							seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+						}
+					}
+				}else{
+					if(block_id_to_compress < blockSize.getLength()){
+						blockSize[block_id_to_compress] = (*orig_block_size)[0];
+						seq[block_id_to_compress] = (*seq_per_block)[0];
+					}else{
+						blockSize.add(Setting::TypeInt) = (*orig_block_size)[0];
+						seq.add(Setting::TypeInt) = (*seq_per_block)[0];
+					}
+				}
 			}
 		}
 		cfg.writeFile(configFileName.c_str());
@@ -688,11 +746,22 @@ void Leon::saveConfig(){
                         Setting &name = file.add(C_FILE, Setting::TypeString);
                         name =  System::file().getBaseName(_real_inputFilename);
                 }
-		Setting &seq = file.add(SEQ, Setting::TypeList);
-		Setting &blockSize  = file.add(BLOCK, Setting::TypeList);
-		for(int i=0;i<seq_per_block->size();i++){
-			blockSize.add(Setting::TypeInt)= (*orig_block_size)[i];
-			seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+		if(_isFasta){
+			Setting &fasta = file.add(FASTA, Setting::TypeGroup);
+			Setting &seq = fasta.add(SEQ, Setting::TypeList);
+			Setting &blockSize  = fasta.add(BLOCK, Setting::TypeList);
+			for(int i=0;i<seq_per_block->size();i++){
+				blockSize.add(Setting::TypeInt)= (*orig_block_size)[i];
+				seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+			}
+		}else{
+			Setting &fastq = file.add(FASTQ, Setting::TypeGroup);
+                        Setting &seq = fastq.add(SEQ, Setting::TypeList);
+                        Setting &blockSize  = fastq.add(BLOCK, Setting::TypeList);
+                        for(int i=0;i<seq_per_block->size();i++){
+                                blockSize.add(Setting::TypeInt)= (*orig_block_size)[i];
+                                seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+                        }
 		}
 		cfg.writeFile(configFileName.c_str());
 	}
@@ -714,6 +783,7 @@ void Leon::endCompression(){
 	if(! _isFasta)
 	{
 		outputFileSize += System::file().getSize(_FileQualname) ;
+		_FileQual->flush();
 	}
 	
 	cout << "\tOutput: " << endl;
@@ -1562,10 +1632,10 @@ vector<string>* Leon::startDecompressionAllStreams(int s_block){
 						reading = false;
 				}
 			}
-			cout<<output_buff<<endl;
-			string block (output_buff);
-			cout<<"bufOff: "<< block.size()<<endl;
-			out->push_back(block);
+		//	cout<<output_buff<<endl;
+		////	string block (output_buff);
+		//	cout<<"bufOff: "<< block.size()<<endl;
+			out->push_back(output_buff);
 
 			if(stream_qual!= NULL) delete  stream_qual;
 			if(stream_header!= NULL) delete  stream_header;
