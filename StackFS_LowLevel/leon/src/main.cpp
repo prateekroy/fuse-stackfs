@@ -29,11 +29,11 @@
 
 using namespace std;
 #define EXT_LEN 5
-#define THRESHOLD 615298
-#define CACHE_SIZE 1
+#define THRESHOLD 21529800
+#define CACHE_SIZE 20
 #define EXT ".leon"
 #define CONFIG "/.biofs.dirinfo"
-#define TMP_FILE "/file_compress"
+#define TMP_FILE "/.file_compress"
 #define CONFIG_LEN 15
 #define TXT_EXT_LEN 4
 #define TXT_EXT ".txt"
@@ -121,7 +121,7 @@ void splitCopy(int argc, char* argv[],const char* tmp_file, int block_id){
 	bool isFasta = true, noHeader = false;
 	IBank* whole_bank = Bank::open(tmp_file);
 	int64_t seqCount = whole_bank->estimateNbItems();
-	string temp_file("tmp_file_compress");
+	string temp_file(".tmp_file_compress");
 	if(leon->_inputFilename.find(".fq") !=  string::npos || leon->_inputFilename.find(".fastq") !=  string::npos){
 		if(! leon->getParser()->saw (Leon::STR_DNA_ONLY) && ! leon->getParser()->saw (Leon::STR_NOQUAL)){
 			isFasta = false;
@@ -1392,10 +1392,12 @@ static void safe_remove(char* name){
                 	fn->prev->next = fn->next;
 			fn->next->prev = fn->prev;
                         free(fn);
+			pthread_spin_lock(&spinlock);
+			g_hash_table_remove(file_cache, key);
+			pthread_spin_unlock(&spinlock);
                 }
 		pthread_spin_lock(&spinlock);
 		g_hash_table_remove(file_table,key);
-		g_hash_table_remove(file_cache, key);
 		pthread_spin_unlock(&spinlock);
 	}
 	if(key!=NULL){
@@ -1416,6 +1418,7 @@ static void add_to_cache(char* name, int fd){
 			size += current->size;
 			if(size>THRESHOLD){
 				cancelAdd = true;
+				safe_remove(name);
 				break;
 			}
                         current = current->next_page;
@@ -1672,6 +1675,9 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 						start = start->next_page;
 					}
 					if(start!=NULL){
+						if(size - bufOff < toOff){
+							toOff = size - bufOff;
+						}
 						memcpy(buf+bufOff, start->file_page, toOff);
 						bufOff += toOff;
 					}
