@@ -33,6 +33,7 @@ ENDIF()
 ################################################################################
 SET (GATB_CORE_HOME  ${PROJECT_SOURCE_DIR}/thirdparty/gatb-core/gatb-core)
 SET (CMAKE_MODULE_PATH ${GATB_CORE_HOME}/cmake)
+SET (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR})
 
 ################################################################################
 # SUPPORTED KMER SIZES

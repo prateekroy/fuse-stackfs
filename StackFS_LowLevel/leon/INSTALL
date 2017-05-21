@@ -14,7 +14,7 @@ cmake -DMAJOR=1 -DMINOR=0 -DPATCH=0 ..
 # Run the newly created makefile:
 make -j 4
 # Copy the created binaries in directory:
-cp ./bin/leon ../
+cp ./bin/StackFS ../
 # Go back at the installation root directory
 cd ..
 #toy example
