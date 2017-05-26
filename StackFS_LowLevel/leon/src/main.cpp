@@ -733,6 +733,7 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 
 	generate_start_time(req);
 	char * point = NULL;
+	string filename(fullPath);
 	StackFS_trace("The file name: %s is looked up", fullPath);
 	if((point = strrchr(fullPath,'.')) != NULL && (strcmp(point, ".fasta")==0||strcmp(point, ".fastq")==0
 				||strcmp(point, ".fa")==0||strcmp(point, ".fq")==0)) {
@@ -762,6 +763,53 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 		}else{
 			res = stat(fullPath, &e.attr);
 		}
+	}else if((point = strrchr(fullPath,'.')) != NULL && strcmp(point, ".leon")==0
+                        && strcmp(filename.substr(filename.size()-5).c_str(), ".leon")==0){
+                struct stat buffer;
+                bool isFastq = false;
+                file_name = (char*) malloc(PATH_MAX);
+                string base_name(filename.substr(0, filename.size()-5));
+                string fastq_name(base_name);
+                fastq_name += ".fastq";
+                string real_name = fastq_name + "_0.leon";
+		string qual_name = fastq_name + "_0.qual";
+                if(stat(real_name.c_str(),&buffer) == 0){
+                        int len = strlen(name) + 8;
+                        isFastq = true;
+                        strcpy(file_name, fastq_name.c_str());
+                        file_name[len-1] = '\0';
+                        res = stat(real_name.c_str(),&e.attr);
+			if(stat(qual_name.c_str(),&buffer) == 0)
+				e.attr.st_size += buffer.st_size;
+                        real_name = fastq_name + "_1.leon";
+			qual_name = fastq_name + "_1.qual";
+                        int block_no = 1;
+                        while(stat(real_name.c_str(),&buffer) == 0){
+                               	e.attr.st_size += buffer.st_size;
+                                block_no++;
+                                real_name = fastq_name + "_" +to_string(block_no)+ "./leon";
+				qual_name = fastq_name + "_" +to_string(block_no)+ "./qual";
+				if(stat(qual_name.c_str(),&buffer) == 0)
+                                	e.attr.st_size += buffer.st_size;
+                        }
+                }
+                string fasta_name(base_name + ".fasta");
+                string filenames(fasta_name + "_0.leon");
+		if(stat(filenames.c_str(),&buffer) == 0){
+                        if(!isFastq){
+                                int len = strlen(name) + 8;
+                                strcpy(file_name, fasta_name.c_str());
+                                file_name[len-1] = '\0';
+                                res = stat(filenames.c_str(),&e.attr);
+                                e.attr.st_size = 0;
+                        }
+                        int block_no = 0;
+                        while(stat(filenames.c_str(),&buffer) == 0){
+                                e.attr.st_size += buffer.st_size;
+                                block_no++;
+                                filenames = fasta_name + "_" +to_string(block_no)+ "./leon";
+                        }
+                }
 	}else{
 		res = stat(fullPath, &e.attr);
 	}
@@ -813,12 +861,11 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 	attr_val = lo_attr_valid_time(req);
 	generate_start_time(req);
 	char * point = NULL;
+	string filename (name);
 	StackFS_trace("The file name: %s is looked up", name);
 	if((point = strrchr(name,'.')) != NULL && (strcmp(point, ".fasta")==0||strcmp(point, ".fastq")==0
 				||strcmp(point, ".fa")==0||strcmp(point, ".fq")==0)) {
 		struct stat buffer;
-		string given_name(name);
-		bool isFastq = true;
 		int len = strlen(name)+EXT_LEN + 3;
 		file_name = (char*) malloc(PATH_MAX);
 		strcpy(file_name, name);
@@ -843,6 +890,53 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 		}else{
 			res = stat(name, &buf);
 		}
+	}else if((point = strrchr(fullPath,'.')) != NULL && strcmp(point, ".leon")==0
+                        && strcmp(filename.substr(filename.size()-5).c_str(), ".leon")==0){
+                struct stat buffer;
+                bool isFastq = false;
+                file_name = (char*) malloc(PATH_MAX);
+                string base_name(filename.substr(0, filename.size()-5));
+                string fastq_name(base_name);
+                fastq_name += ".fastq";
+                string real_name = fastq_name + "_0.leon";
+                string qual_name = fastq_name + "_0.qual";
+                if(stat(real_name.c_str(),&buffer) == 0){
+                        int len = strlen(name) + 8;
+                        isFastq = true;
+                        strcpy(file_name, fastq_name.c_str());
+                        file_name[len-1] = '\0';
+                        res = stat(real_name.c_str(),&e.attr);
+                        if(stat(qual_name.c_str(),&buffer) == 0)
+                                e.attr.st_size += buffer.st_size;
+                        real_name = fastq_name + "_1.leon";
+                        qual_name = fastq_name + "_1.qual";
+                        int block_no = 1;
+                        while(stat(real_name.c_str(),&buffer) == 0){
+                                e.attr.st_size += buffer.st_size;
+                                block_no++;
+                                real_name = fastq_name + "_" +to_string(block_no)+ "./leon";
+                                qual_name = fastq_name + "_" +to_string(block_no)+ "./qual";
+                                if(stat(qual_name.c_str(),&buffer) == 0)
+                                        e.attr.st_size += buffer.st_size;
+                        }
+                }
+                string fasta_name(base_name + ".fasta");
+                string filenames(fasta_name + "_0.leon");
+                if(stat(filenames.c_str(),&buffer) == 0){
+			if(!isFastq){
+                                int len = strlen(name) + 8;
+                                strcpy(file_name, fasta_name.c_str());
+                                file_name[len-1] = '\0';
+                                res = stat(filenames.c_str(),&e.attr);
+                                e.attr.st_size = 0;
+                        }
+                        int block_no = 0;
+                        while(stat(filenames.c_str(),&buffer) == 0){
+                                e.attr.st_size += buffer.st_size;
+                                block_no++;
+                                filenames = fasta_name + "_" +to_string(block_no)+ "./leon";
+                        }
+		} 
 	}else{
 		res = stat(name, &buf);
 	}
@@ -940,68 +1034,7 @@ static void stackfs_ll_create(fuse_req_t req, fuse_ino_t parent,
 	generate_end_time(req);
 	populate_time(req);
 
-	if (res == 0) {/*
-		//Create Compressed files//
-		string fileName (name);
-		if(fileName.find(".fastq") || fileName.find(".fq")){
-			int count = 0;
-			char** args = prep_args(fullPath,true, true, false,count);
-			//splitFiles(count, args);
-			free(args);
-			args = prep_args(fullPath,true, false, false,count);
-			//splitFiles(count, args);
-			int len = strlen(fullPath)+EXT_LEN + 3;
-			char* file_name = (char*) malloc(PATH_MAX);
-			strcpy(file_name, fullPath);
-			strcat(file_name, "_0");
-			strcat(file_name, EXT);
-			file_name[len-1] = '\0';
-			memset(&e, 0, sizeof(e));
-			e.attr_timeout = attr_val;
-			e.entry_timeout = 1.0;
-			if(stat(file_name, &e.attr) == 0) 
-			{
-				Leon* leon = new Leon();
-				leon->run(count, args);
-				char * config = createFile(file_name, CONFIG);
-				char * point = strrchr(file_name, '/');
-				char * input = (char *) malloc(PATH_MAX);
-				strncpy(input, point, strlen(point)-EXT_LEN);
-				e.attr.st_size = leon->getFileSize(config, input);
-				free(config);
-				free(input);
-				delete leon;
-			}
-		}else if(fileName.find(".fasta") || fileName.find(".fa")){
-			int count = 0;
-			char** args = prep_args(fullPath,true, false, false,count);
-                        splitFiles(count, args);
-                        free(args);
-			int len = strlen(fullPath)+EXT_LEN + 3;
-                        char* file_name = (char*) malloc(PATH_MAX);
-                        strcpy(file_name, fullPath);
-                        strcat(file_name, "_0");
-                        strcat(file_name, EXT);
-                        file_name[len-1] = '\0';
-                        memset(&e, 0, sizeof(e));
-                        e.attr_timeout = attr_val;
-                        e.entry_timeout = 1.0;
-                        if(stat(file_name, &e.attr) == 0)
-                        {
-                                Leon* leon = new Leon();
-                                int count = 0;
-                                char** args = prep_args(fullPath,false, false, true,count);
-                                leon->run(count, args);
-                                char * config = createFile(file_name, CONFIG);
-                                char * point = strrchr(file_name, '/');
-                                char * input = (char *) malloc(PATH_MAX);
-                                strncpy(input, point, strlen(point)-EXT_LEN);
-                                e.attr.st_size = leon->getFileSize(config, input);
-                                free(config);
-                                free(input);
-                                delete leon;
-                        }
-		}*/
+	if (res == 0) {
 		/* insert lo_inode into the hash table */
 		struct lo_data *lo_data;
 		struct lo_inode *lo_inode;
