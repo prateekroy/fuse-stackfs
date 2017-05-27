@@ -771,6 +771,7 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
                 string base_name(filename.substr(0, filename.size()-5));
                 string fastq_name(base_name);
                 fastq_name += ".fastq";
+		time_t last;
                 string real_name = fastq_name + "_0.leon";
 		string qual_name = fastq_name + "_0.qual";
                 if(stat(real_name.c_str(),&buffer) == 0){
@@ -779,18 +780,27 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
                         strcpy(file_name, fastq_name.c_str());
                         file_name[len-1] = '\0';
                         res = stat(real_name.c_str(),&e.attr);
-			if(stat(qual_name.c_str(),&buffer) == 0)
+			last = e.attr.st_mtime;
+			if(stat(qual_name.c_str(),&buffer) == 0){
 				e.attr.st_size += buffer.st_size;
+				 if(difftime(last, buffer.st_mtime) < 0)
+                                        last = buffer.st_mtime;
+			}
                         real_name = fastq_name + "_1.leon";
 			qual_name = fastq_name + "_1.qual";
                         int block_no = 1;
                         while(stat(real_name.c_str(),&buffer) == 0){
                                	e.attr.st_size += buffer.st_size;
+				if(difftime(last, buffer.st_mtime) < 0)
+                                	last = buffer.st_mtime;
                                 block_no++;
                                 real_name = fastq_name + "_" +to_string(block_no)+ "./leon";
 				qual_name = fastq_name + "_" +to_string(block_no)+ "./qual";
-				if(stat(qual_name.c_str(),&buffer) == 0)
+				if(stat(qual_name.c_str(),&buffer) == 0){
                                 	e.attr.st_size += buffer.st_size;
+					if(difftime(last, buffer.st_mtime) < 0)
+                                        	last = buffer.st_mtime;
+				}
                         }
                 }
                 string fasta_name(base_name + ".fasta");
@@ -802,14 +812,19 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
                                 file_name[len-1] = '\0';
                                 res = stat(filenames.c_str(),&e.attr);
                                 e.attr.st_size = 0;
+				if(difftime(last, e.attr.st_mtime) < 0)
+                               		last = e.attr.st_mtime;
                         }
                         int block_no = 0;
                         while(stat(filenames.c_str(),&buffer) == 0){
                                 e.attr.st_size += buffer.st_size;
                                 block_no++;
                                 filenames = fasta_name + "_" +to_string(block_no)+ "./leon";
+				if(difftime(last, buffer.st_mtime) < 0)
+                                 	last = buffer.st_mtime;
                         }
                 }
+		e.attr.st_mtime = last;
 	}else{
 		res = stat(fullPath, &e.attr);
 	}
@@ -890,7 +905,7 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 		}else{
 			res = stat(name, &buf);
 		}
-	}else if((point = strrchr(fullPath,'.')) != NULL && strcmp(point, ".leon")==0
+	}else if((point = strrchr(name,'.')) != NULL && strcmp(point, ".leon")==0
                         && strcmp(filename.substr(filename.size()-5).c_str(), ".leon")==0){
                 struct stat buffer;
                 bool isFastq = false;
@@ -898,6 +913,7 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
                 string base_name(filename.substr(0, filename.size()-5));
                 string fastq_name(base_name);
                 fastq_name += ".fastq";
+		time_t last;
                 string real_name = fastq_name + "_0.leon";
                 string qual_name = fastq_name + "_0.qual";
                 if(stat(real_name.c_str(),&buffer) == 0){
@@ -905,19 +921,28 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
                         isFastq = true;
                         strcpy(file_name, fastq_name.c_str());
                         file_name[len-1] = '\0';
-                        res = stat(real_name.c_str(),&e.attr);
-                        if(stat(qual_name.c_str(),&buffer) == 0)
-                                e.attr.st_size += buffer.st_size;
+                        res = stat(real_name.c_str(),&buf);
+			last = buf.st_mtime;
+                        if(stat(qual_name.c_str(),&buffer) == 0){
+                                buf.st_size += buffer.st_size;
+				if(difftime(last, buf.st_mtime) < 0)
+					last = buf.st_mtime;
+			}
                         real_name = fastq_name + "_1.leon";
                         qual_name = fastq_name + "_1.qual";
                         int block_no = 1;
                         while(stat(real_name.c_str(),&buffer) == 0){
-                                e.attr.st_size += buffer.st_size;
+                                buf.st_size += buffer.st_size;
+				if(difftime(last, buffer.st_mtime) < 0)
+                                        last = buffer.st_mtime;
                                 block_no++;
                                 real_name = fastq_name + "_" +to_string(block_no)+ "./leon";
                                 qual_name = fastq_name + "_" +to_string(block_no)+ "./qual";
-                                if(stat(qual_name.c_str(),&buffer) == 0)
-                                        e.attr.st_size += buffer.st_size;
+                                if(stat(qual_name.c_str(),&buffer) == 0){
+                                        buf.st_size += buffer.st_size;
+					if(difftime(last, buffer.st_mtime) < 0)
+                                        	last = buffer.st_mtime;
+				}
                         }
                 }
                 string fasta_name(base_name + ".fasta");
@@ -927,16 +952,21 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
                                 int len = strlen(name) + 8;
                                 strcpy(file_name, fasta_name.c_str());
                                 file_name[len-1] = '\0';
-                                res = stat(filenames.c_str(),&e.attr);
-                                e.attr.st_size = 0;
+                                res = stat(filenames.c_str(),&buf);
+                                buf.st_size = 0;
+				if(difftime(last, buf.st_mtime) < 0)
+                                        last = buf.st_mtime;
                         }
                         int block_no = 0;
                         while(stat(filenames.c_str(),&buffer) == 0){
-                                e.attr.st_size += buffer.st_size;
+                                buf.st_size += buffer.st_size;
                                 block_no++;
                                 filenames = fasta_name + "_" +to_string(block_no)+ "./leon";
+				if(difftime(last, buffer.st_mtime) < 0)
+                                	last = buffer.st_mtime;
                         }
-		} 
+		}
+		buf.st_mtime = last; 
 	}else{
 		res = stat(name, &buf);
 	}
