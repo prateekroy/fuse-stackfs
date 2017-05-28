@@ -655,6 +655,72 @@ vector<int>* Leon::getBlockSizes(){
 	return orig_block_size;
 }
 
+void Leon::removeEntireFileConfig(){
+	string dir = System::file().getDirectory(_real_inputFilename);
+        string configFileName = dir +"/"+ CONFIG;
+        struct stat configFile;
+        Config cfg;
+        if(stat(configFileName.c_str(), &configFile) != 0){
+                ofstream{configFileName.c_str()};
+        }
+        try
+        {
+                cfg.readFile(configFileName.c_str());
+        }
+        catch(const FileIOException &fioex)
+        {
+                cerr << "I/O error while reading file." << endl;
+        }
+        catch(const ParseException &pex)
+        {
+                cerr << "Parse error at " << pex.getFile() << ":" << pex.getLine()
+                        << " - " << pex.getError() <<endl;
+        }
+        Setting &root = cfg.getRoot();
+        if(root.exists(C_FILES)){
+                Setting &files = root[C_FILES];
+                if(files.exists(System::file().getBaseName(_real_inputFilename))){
+			files.remove(System::file().getBaseName(_real_inputFilename));
+			cfg.writeFile(configFileName.c_str());
+		}
+	}
+}
+
+void Leon::removeConfig(bool isFastq){
+	string dir = System::file().getDirectory(_real_inputFilename);
+        string configFileName = dir +"/"+ CONFIG;
+        struct stat configFile;
+        Config cfg;
+        if(stat(configFileName.c_str(), &configFile) != 0){
+                ofstream{configFileName.c_str()};
+        }
+        try
+        {
+                cfg.readFile(configFileName.c_str());
+        }
+	catch(const FileIOException &fioex)
+        {
+                cerr << "I/O error while reading file." << endl;
+        }
+        catch(const ParseException &pex)
+        {
+                cerr << "Parse error at " << pex.getFile() << ":" << pex.getLine()
+                        << " - " << pex.getError() <<endl;
+        }
+	Setting &root = cfg.getRoot();
+        if(root.exists(C_FILES)){
+		Setting &files = root[C_FILES];
+	        if(files.exists(System::file().getBaseName(_real_inputFilename))){
+        	        Setting &file = files[System::file().getBaseName(_real_inputFilename)];
+			if(isFastq && file.exists(FASTQ))
+				file.remove(FASTQ);
+			else if(file.exists(FASTA))
+				file.remove(FASTA);
+			cfg.writeFile(configFileName.c_str());
+		}
+	}       
+}
+
 void Leon::saveConfig(){
 	string dir = System::file().getDirectory(_real_inputFilename);
 	string configFileName = dir +"/"+ CONFIG;

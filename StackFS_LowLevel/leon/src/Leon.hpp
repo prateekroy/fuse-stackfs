@@ -211,6 +211,8 @@ class Leon : public misc::impl::Tool
 		int findBlockId(int off, int &blockOff);
 		vector<int>* getBlockSizes();
 		void saveConfig();
+		void removeConfig(bool isFastq);
+		void removeEntireFileConfig();
 		void setBlockId(int block);
 	private:
 
