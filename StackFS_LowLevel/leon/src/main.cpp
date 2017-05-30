@@ -1942,11 +1942,13 @@ error:
 		generate_start_time(req);
 		char * name = lo_name(req, ino);
 		string fileName (name);
+		char * point = NULL;
 		if(g_hash_table_lookup(file_table, name)!=NULL && g_hash_table_lookup(file_cache, name)==NULL)
 			add_to_cache(name, fi->fh);
 		else if(g_hash_table_lookup(file_table, name)==NULL && 
-				(fileName.find(".fastq") || fileName.find(".fq") || 
-				 fileName.find(".fasta") || fileName.find(".fa")))
+			(point = strrchr(name,'.')) != NULL && fileName.find(TMP_FILE)==string::npos &&
+                        (strcmp(point, ".fasta")==0||strcmp(point, ".fastq")==0
+                         ||strcmp(point, ".fa")==0||strcmp(point, ".fq")==0))
 		{
 			if(fileName.find(".fastq") || fileName.find(".fq"))
 			{
