@@ -2435,6 +2435,79 @@ error:
 		fullPath = (char *)malloc(PATH_MAX);
 		construct_full_path(req, parent, fullPath, name);
 		generate_start_time(req);
+		DIR           *d;
+  		struct dirent *dir;
+  		d = opendir(fullPath);
+  		if (d)
+  		{
+    			while ((dir = readdir(d)) != NULL)
+    			{
+				string entry_name;
+				char* point;
+				entry_name = fullPath;
+				entry_name += "/";
+				entry_name +=  dir->d_name;
+      				StackFS_trace("%s\n", entry_name.c_str());
+				char* temp_name = new char[entry_name.size()+1];
+				strcpy(temp_name, entry_name.c_str());
+				string visible_name = entry_name;
+				if((point = strrchr(temp_name,'.')) != NULL && strcmp(point, ".leon")==0){
+					if(entry_name.rfind(".fastq")!=string::npos){
+						visible_name = entry_name.substr(0,  entry_name.rfind(".fastq") + 6);
+					}else if(entry_name.rfind(".fasta")!=string::npos){
+						visible_name = entry_name.substr(0,  entry_name.rfind(".fasta") + 6);
+					}else if(entry_name.rfind(".fq")!=string::npos){
+						visible_name = entry_name.substr(0,  entry_name.rfind(".fq") + 3);
+					}else if(entry_name.rfind(".fa")!=string::npos){
+						visible_name = entry_name.substr(0,  entry_name.rfind(".fa") + 3);
+					}else{
+						visible_name = entry_name;
+					}
+					StackFS_trace("File found : %s", visible_name.c_str());
+				}else{
+					visible_name = entry_name;
+				}
+				if(g_hash_table_contains(file_table, visible_name.c_str())){
+					struct file_pages * fp = (struct file_pages*) 
+							g_hash_table_lookup(file_table, visible_name.c_str());
+					StackFS_trace("File found : %s removing %p", visible_name.c_str(), fp);
+					struct file_pages * current = fp;
+					while(current!=NULL && current->next_page!=NULL){
+						current = current->next_page;
+					}
+					while(current!=NULL && current!=fp){
+						current = current->prev_page;
+						if(current->next_page!=NULL){
+							free(current->next_page->file_page);
+							free(current->next_page);
+							current->next_page = NULL;
+						}
+					}
+					delete fp->leon;
+					if(fp!=NULL){
+						free(fp->file_page);
+						free(fp);
+						fp = NULL;
+					}
+					pthread_spin_lock(&spinlock);
+					g_hash_table_remove(file_table, visible_name.c_str());
+					pthread_spin_unlock(&spinlock);
+				}
+				if(g_hash_table_contains(file_cache, visible_name.c_str())){
+					struct file_node * fn = (struct file_node*) 
+						g_hash_table_lookup(file_cache, visible_name.c_str());
+					fn->prev->next = fn->next;
+					fn->next->prev = fn->prev;
+					free(fn);
+					pthread_spin_lock(&spinlock);
+					g_hash_table_remove(file_cache, visible_name.c_str());
+					pthread_spin_unlock(&spinlock);
+				}
+				unlink(entry_name.c_str());
+				delete(temp_name);
+			}
+			closedir(d);
+		}
 		res = rmdir(fullPath);
 		generate_end_time(req);
 		populate_time(req);
@@ -2596,7 +2669,7 @@ getattr	:stackfs_ll_getattr,
 setattr :stackfs_ll_setattr,
 mkdir   :stackfs_ll_mkdir,
 unlink  :stackfs_ll_unlink,
-rmdir   :stackfs_ll_rmdir,
+rmdleName.c_str());ir   :stackfs_ll_rmdir,
 open    :stackfs_ll_open,
 read    :stackfs_ll_read,
 write   :stackfs_ll_write,

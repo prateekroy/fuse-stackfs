@@ -712,11 +712,14 @@ void Leon::removeConfig(bool isFastq){
 		Setting &files = root[C_FILES];
 	        if(files.exists(System::file().getBaseName(_real_inputFilename))){
         	        Setting &file = files[System::file().getBaseName(_real_inputFilename)];
-			if(isFastq && file.exists(FASTQ))
+			if(isFastq && file.exists(FASTQ)){
 				file.remove(FASTQ);
-			else if(file.exists(FASTA))
+				cfg.writeFile(configFileName.c_str());
+			}
+			else if(file.exists(FASTA)){
 				file.remove(FASTA);
-			cfg.writeFile(configFileName.c_str());
+				cfg.writeFile(configFileName.c_str());
+			}
 		}
 	}       
 }
