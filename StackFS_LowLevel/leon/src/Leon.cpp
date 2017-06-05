@@ -769,36 +769,68 @@ void Leon::renameConfig(const char* to_name, char* t_fullPath){
 			Setting &files = root[C_FILES];
 			if(files.exists(System::file().getBaseName(_real_inputFilename))){
 				Setting &file = files[System::file().getBaseName(_real_inputFilename)];
-				cout<<toName<<endl;
-				Setting &tofile = files.add(toName, Setting::TypeGroup);
 				if(_isFasta){
-					Setting &fasta = file[FASTA];
-					const Setting &seq = fasta[SEQ];
-					const Setting &blockSize  = fasta[BLOCK];
-					Setting &t_fasta = tofile.add(FASTA, Setting::TypeGroup);
-					Setting &t_seq = t_fasta.add(SEQ, Setting::TypeList);
-					Setting &t_blockSize  = t_fasta.add(BLOCK, Setting::TypeList);
-					for(int i=0;i<seq.getLength();i++){
-						int tmp =  blockSize[i];
-						t_blockSize.add(Setting::TypeInt)= tmp;
-						tmp = seq[i];
-						t_seq.add(Setting::TypeInt) = tmp;
+					if(files.exists(toName) && !files[toName].exists(FASTA)){
+						Setting &tofile = files[toName];
+                                        	Setting &fasta = file[FASTA];
+                                        	const Setting &seq = fasta[SEQ];
+                                        	const Setting &blockSize  = fasta[BLOCK];
+                                        	Setting &t_fasta = tofile.add(FASTA, Setting::TypeGroup);
+                                       	 	Setting &t_seq = t_fasta.add(SEQ, Setting::TypeList);
+                                        	Setting &t_blockSize  = t_fasta.add(BLOCK, Setting::TypeList);
+                                        	for(int i=0;i<seq.getLength();i++){
+                                                	int tmp =  blockSize[i];
+                                               	 	t_blockSize.add(Setting::TypeInt)= tmp;
+                                                	tmp = seq[i];
+                                                	t_seq.add(Setting::TypeInt) = tmp;
+                                        	}						
+					}else if(!files.exists(toName)){
+						Setting &tofile = files.add(toName, Setting::TypeGroup);
+						Setting &fasta = file[FASTA];
+						const Setting &seq = fasta[SEQ];
+						const Setting &blockSize  = fasta[BLOCK];
+						Setting &t_fasta = tofile.add(FASTA, Setting::TypeGroup);
+						Setting &t_seq = t_fasta.add(SEQ, Setting::TypeList);
+						Setting &t_blockSize  = t_fasta.add(BLOCK, Setting::TypeList);
+						for(int i=0;i<seq.getLength();i++){
+							int tmp =  blockSize[i];
+							t_blockSize.add(Setting::TypeInt)= tmp;
+							tmp = seq[i];
+							t_seq.add(Setting::TypeInt) = tmp;
+						}
 					}
 					file.remove(FASTA);
 					if(!file.exists(FASTQ))
 						files.remove(System::file().getBaseName(_real_inputFilename));
 				}else{
-					Setting &fastq = file[FASTQ];
-					const Setting &seq = fastq[SEQ];
-					const Setting &blockSize  = fastq[BLOCK];
-					Setting &t_fastq = tofile.add(FASTQ, Setting::TypeGroup);
-					Setting &t_seq = t_fastq.add(SEQ, Setting::TypeList);
-					Setting &t_blockSize  = t_fastq.add(BLOCK, Setting::TypeList);
-					for(int i=0;i<seq.getLength();i++){
-						int tmp =  blockSize[i];
-						t_blockSize.add(Setting::TypeInt)= tmp;
-						tmp = seq[i];
-						t_seq.add(Setting::TypeInt) = tmp;
+					 if(files.exists(toName) && !files[toName].exists(FASTQ)){
+                                                Setting &tofile = files[toName];
+                                                Setting &fastq = file[FASTQ];
+                                                const Setting &seq = fastq[SEQ];
+                                                const Setting &blockSize  = fastq[BLOCK];
+                                                Setting &t_fastq = tofile.add(FASTQ, Setting::TypeGroup);
+                                                Setting &t_seq = t_fastq.add(SEQ, Setting::TypeList);
+                                                Setting &t_blockSize  = t_fastq.add(BLOCK, Setting::TypeList);
+                                                for(int i=0;i<seq.getLength();i++){
+                                                        int tmp =  blockSize[i];
+                                                        t_blockSize.add(Setting::TypeInt)= tmp;
+                                                        tmp = seq[i];
+                                                        t_seq.add(Setting::TypeInt) = tmp;
+                                                }
+                                        }else if(!files.exists(toName)){
+						Setting &tofile = files.add(toName, Setting::TypeGroup);
+						Setting &fastq = file[FASTQ];
+						const Setting &seq = fastq[SEQ];
+						const Setting &blockSize  = fastq[BLOCK];
+						Setting &t_fastq = tofile.add(FASTQ, Setting::TypeGroup);
+						Setting &t_seq = t_fastq.add(SEQ, Setting::TypeList);
+						Setting &t_blockSize  = t_fastq.add(BLOCK, Setting::TypeList);
+						for(int i=0;i<seq.getLength();i++){
+							int tmp =  blockSize[i];
+							t_blockSize.add(Setting::TypeInt)= tmp;
+							tmp = seq[i];
+							t_seq.add(Setting::TypeInt) = tmp;
+						}
 					}
 					file.remove(FASTQ);
 					if(!file.exists(FASTA))
@@ -837,36 +869,68 @@ void Leon::renameConfig(const char* to_name, char* t_fullPath){
 			Setting &t_files = t_root[C_FILES];
                         if(f_files.exists(System::file().getBaseName(_real_inputFilename))){
                                 Setting &file = f_files[System::file().getBaseName(_real_inputFilename)];
-                                cout<<toName<<endl;
-                                Setting &tofile = t_files.add(toName, Setting::TypeGroup);
-                                if(_isFasta){
-                                        Setting &fasta = file[FASTA];
-                                        const Setting &seq = fasta[SEQ];
-                                        const Setting &blockSize  = fasta[BLOCK];
-                                        Setting &t_fasta = tofile.add(FASTA, Setting::TypeGroup);
-                                        Setting &t_seq = t_fasta.add(SEQ, Setting::TypeList);
-                                        Setting &t_blockSize  = t_fasta.add(BLOCK, Setting::TypeList);
-                                        for(int i=0;i<seq.getLength();i++){
-                                                int tmp =  blockSize[i];
-                                                t_blockSize.add(Setting::TypeInt)= tmp;
-                                                tmp = seq[i];
-                                                t_seq.add(Setting::TypeInt) = tmp;
+				if(_isFasta){
+                                        if(t_files.exists(toName) && !t_files[toName].exists(FASTA)){
+                                                Setting &tofile = t_files[toName];
+                                                Setting &fasta = file[FASTA];
+                                                const Setting &seq = fasta[SEQ];
+                                                const Setting &blockSize  = fasta[BLOCK];
+                                                Setting &t_fasta = tofile.add(FASTA, Setting::TypeGroup);
+                                                Setting &t_seq = t_fasta.add(SEQ, Setting::TypeList);
+                                                Setting &t_blockSize  = t_fasta.add(BLOCK, Setting::TypeList);
+                                                for(int i=0;i<seq.getLength();i++){
+                                                        int tmp =  blockSize[i];
+                                                        t_blockSize.add(Setting::TypeInt)= tmp;
+                                                        tmp = seq[i];
+                                                        t_seq.add(Setting::TypeInt) = tmp;
+                                                }
+                                        }else if(!t_files.exists(toName)){
+                                                Setting &tofile = t_files.add(toName, Setting::TypeGroup);
+                                                Setting &fasta = file[FASTA];
+                                                const Setting &seq = fasta[SEQ];
+                                                const Setting &blockSize  = fasta[BLOCK];
+                                                Setting &t_fasta = tofile.add(FASTA, Setting::TypeGroup);
+                                                Setting &t_seq = t_fasta.add(SEQ, Setting::TypeList);
+                                                Setting &t_blockSize  = t_fasta.add(BLOCK, Setting::TypeList);
+                                                for(int i=0;i<seq.getLength();i++){
+                                                        int tmp =  blockSize[i];
+                                                        t_blockSize.add(Setting::TypeInt)= tmp;
+                                                        tmp = seq[i];
+                                                        t_seq.add(Setting::TypeInt) = tmp;
+                                                }
                                         }
                                         file.remove(FASTA);
                                         if(!file.exists(FASTQ))
                                                 f_files.remove(System::file().getBaseName(_real_inputFilename));
                                 }else{
-                                        Setting &fastq = file[FASTQ];
-                                        const Setting &seq = fastq[SEQ];
-                                        const Setting &blockSize  = fastq[BLOCK];
-                                        Setting &t_fastq = tofile.add(FASTQ, Setting::TypeGroup);
-                                        Setting &t_seq = t_fastq.add(SEQ, Setting::TypeList);
-                                        Setting &t_blockSize  = t_fastq.add(BLOCK, Setting::TypeList);
-                                        for(int i=0;i<seq.getLength();i++){
-                                                int tmp =  blockSize[i];
-                                                t_blockSize.add(Setting::TypeInt)= tmp;
-                                                tmp = seq[i];
-                                                t_seq.add(Setting::TypeInt) = tmp;
+                                         if(t_files.exists(toName) && !t_files[toName].exists(FASTQ)){
+                                                Setting &tofile = t_files[toName];
+                                                Setting &fastq = file[FASTQ];
+                                                const Setting &seq = fastq[SEQ];
+                                                const Setting &blockSize  = fastq[BLOCK];
+                                                Setting &t_fastq = tofile.add(FASTQ, Setting::TypeGroup);
+                                                Setting &t_seq = t_fastq.add(SEQ, Setting::TypeList);
+                                                Setting &t_blockSize  = t_fastq.add(BLOCK, Setting::TypeList);
+                                                for(int i=0;i<seq.getLength();i++){
+                                                        int tmp =  blockSize[i];
+                                                        t_blockSize.add(Setting::TypeInt)= tmp;
+                                                        tmp = seq[i];
+                                                        t_seq.add(Setting::TypeInt) = tmp;
+                                                }
+                                        }else if(!t_files.exists(toName)){
+                                                Setting &tofile = t_files.add(toName, Setting::TypeGroup);
+                                                Setting &fastq = file[FASTQ];
+                                                const Setting &seq = fastq[SEQ];
+                                                const Setting &blockSize  = fastq[BLOCK];
+                                                Setting &t_fastq = tofile.add(FASTQ, Setting::TypeGroup);
+                                                Setting &t_seq = t_fastq.add(SEQ, Setting::TypeList);
+                                                Setting &t_blockSize  = t_fastq.add(BLOCK, Setting::TypeList);
+                                                for(int i=0;i<seq.getLength();i++){
+                                                        int tmp =  blockSize[i];
+                                                        t_blockSize.add(Setting::TypeInt)= tmp;
+                                                        tmp = seq[i];
+                                                        t_seq.add(Setting::TypeInt) = tmp;
+                                                }
                                         }
                                         file.remove(FASTQ);
                                         if(!file.exists(FASTA))

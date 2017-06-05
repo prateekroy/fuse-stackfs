@@ -2651,7 +2651,7 @@ error:
 				}
 			}else{
 				res = -1;
-				errno = -EPERM;
+				errno = EPERM;
 			}
 		}else if((point = strrchr(f_fullPath,'.')) != NULL && checkTemp.find(TMP_FILE)==string::npos &&
 				(strcmp(point, ".fasta")==0||strcmp(point, ".fastq")==0
