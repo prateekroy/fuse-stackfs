@@ -47,6 +47,7 @@ pthread_spinlock_t spinlock; /* Protecting the above spin lock */
 char banner[4096];
 GHashTable* file_table;
 GHashTable* file_cache;
+unordered_map<string , unordered_set<string>> directory_list_map;
 struct file_node{
 	char file_name[PATH_MAX];
 	Leon *leon;
@@ -1578,7 +1579,6 @@ static void stackfs_ll_opendir(fuse_req_t req, fuse_ino_t ino,
 
 	StackFS_trace("Opendir called on name : %s and inode : %llu",
 			lo_name(req, ino), lo_inode(req, ino)->ino);
-
 	generate_start_time(req);
 	dp = opendir(lo_name(req, ino));
 	generate_end_time(req);
@@ -1786,8 +1786,11 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 				lo_name(req, ino), lo_inode(req, ino)->ino);
 		d = lo_dirptr(fi);
 		buf = (char *)malloc(size*sizeof(char));
-		GHashTable* directory_list = g_hash_table_new(g_str_hash, g_str_equal);
 		unordered_set<string> file_list;
+		unordered_map<string,  unordered_set<string>>::const_iterator got = 
+							directory_list_map.find(lo_name(req, ino));
+  		if ( got != directory_list_map.end() )
+    			file_list = got->second;
 		if (!buf)
 			return (void) fuse_reply_err(req, ENOMEM);
 
@@ -1917,6 +1920,7 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			d->entry = NULL;
 			d->offset = nextoff;
 		}
+		directory_list_map[lo_name(req, ino)] = file_list;
 		generate_end_time(req);
 		populate_time(req);
 		fuse_reply_buf(req, buf, size - rem);
@@ -1990,6 +1994,7 @@ error:
 		StackFS_trace("Releasedir called on name : %s and inode : %llu",
 				lo_name(req, ino), lo_inode(req, ino)->ino);
 		d = lo_dirptr(fi);
+		directory_list_map.erase(lo_name(req, ino));
 		generate_start_time(req);
 		closedir(d->dp);
 		generate_end_time(req);
