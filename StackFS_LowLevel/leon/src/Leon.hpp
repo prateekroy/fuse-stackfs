@@ -212,6 +212,7 @@ class Leon : public misc::impl::Tool
 		vector<int>* getBlockSizes();
 		void saveConfig();
 		void removeConfig(bool isFastq);
+		void renameConfig(const char* toName, char* t_full);
 		void removeEntireFileConfig();
 		void setBlockId(int block);
 	private:

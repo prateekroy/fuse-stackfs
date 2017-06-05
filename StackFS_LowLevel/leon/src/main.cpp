@@ -1931,6 +1931,28 @@ error:
 
 		fuse_reply_err(req, err);
 	}
+	
+	static void create_file(char* name){
+		string fileName(name);
+		if(fileName.find(".fastq") || fileName.find(".fq"))
+		{
+			int count = 0;
+			char** args = prep_args(name,true, true, false,count);
+			splitFiles(count, args);
+			delete[] args;
+			args = prep_args(name,true, false, false,count);
+			splitFiles(count, args);
+			delete[] args;
+		}
+		else if(fileName.find(".fasta") || fileName.find(".fa"))
+		{
+			int count = 0;
+			char** args = prep_args(name,true, false, false,count);
+			splitFiles(count, args);
+			delete[] args;
+		}
+		unlink(name);
+	}
 
 	static void stackfs_ll_release(fuse_req_t req, fuse_ino_t ino,
 			struct fuse_file_info *fi)
@@ -1950,24 +1972,7 @@ error:
                         (strcmp(point, ".fasta")==0||strcmp(point, ".fastq")==0
                          ||strcmp(point, ".fa")==0||strcmp(point, ".fq")==0))
 		{
-			if(fileName.find(".fastq") || fileName.find(".fq"))
-			{
-				int count = 0;
-				char** args = prep_args(name,true, true, false,count);
-				splitFiles(count, args);
-				delete[] args;
-				args = prep_args(name,true, false, false,count);
-				splitFiles(count, args);
-				delete[] args;
-			}
-			else if(fileName.find(".fasta") || fileName.find(".fa"))
-			{
-				int count = 0;
-				char** args = prep_args(name,true, false, false,count);
-				splitFiles(count, args);
-				delete[] args;
-			}
-			unlink(name);
+			create_file(name);
 		}
 		close(fi->fh);
 		generate_end_time(req);
@@ -2347,6 +2352,60 @@ error:
 		return res;
 	}
 
+	static int remove_file(char* fullPath){
+		int res = 0;
+		struct stat buffer;
+		string given_name(fullPath);
+		bool isFastq = false;
+		if(given_name.rfind(".fastq")!=string::npos || given_name.rfind(".fq")!=string::npos){
+			isFastq = true;
+			res = remove_entry(fullPath , true);
+			string fasta_name;
+			if(given_name.rfind(".fastq") == string::npos)
+			{
+				fasta_name = given_name.substr(0,given_name.rfind(".fq"));
+				fasta_name += ".fa";
+			}else{
+				fasta_name = given_name.substr(0,given_name.rfind(".fastq"));
+				fasta_name += ".fasta";
+			}
+			char* writable = new char [fasta_name.size()+1];
+			copy(fasta_name.begin(), fasta_name.end(), writable);
+			writable[fasta_name.size()] = '\0';
+			res = remove_entry(writable, false);
+			delete[] writable;
+			int count = 0;
+			Leon *leonRemove = new Leon();
+			char** args = prep_args(fullPath, false, !isFastq, true,count);
+			leonRemove->run(count, args);
+			leonRemove->removeEntireFileConfig();
+			delete leonRemove;
+		}else{
+			res = remove_entry(fullPath, false);
+			string fasta_name;
+			if(given_name.rfind(".fasta") == string::npos)
+			{
+				fasta_name = given_name.substr(0,given_name.rfind(".fa"));
+				fasta_name += ".fq";
+			}else{
+				fasta_name = given_name.substr(0,given_name.rfind(".fasta"));
+				fasta_name += ".fastq";
+			}
+			char* writable = new char [fasta_name.size()+1];
+			copy(fasta_name.begin(), fasta_name.end(), writable);
+			writable[fasta_name.size()] = '\0';
+			res = remove_entry(writable, true);
+			delete[] writable;
+			int count = 0;
+			Leon *leonRemove = new Leon();
+			char** args = prep_args(fullPath, false, !isFastq, true,count);
+			leonRemove->run(count, args);
+			leonRemove->removeEntireFileConfig();
+			delete leonRemove;
+		}
+		return res;
+	}
+
 	static void stackfs_ll_unlink(fuse_req_t req, fuse_ino_t parent,
 			const char *name)
 	{
@@ -2364,55 +2423,7 @@ error:
 		if((point = strrchr(fullPath,'.')) != NULL && checkTemp.find(TMP_FILE)==string::npos &&
 				(strcmp(point, ".fasta")==0||strcmp(point, ".fastq")==0
 				 ||strcmp(point, ".fa")==0||strcmp(point, ".fq")==0)) {
-			struct stat buffer;
-			string given_name(fullPath);
-			bool isFastq = false;
-			if(given_name.rfind(".fastq")!=string::npos || given_name.rfind(".fq")!=string::npos){
-				isFastq = true;
-				res = remove_entry(fullPath , true);
-				string fasta_name;
-				if(given_name.rfind(".fastq") == string::npos)
-				{	
-					fasta_name = given_name.substr(0,given_name.rfind(".fq"));
-					fasta_name += ".fa";
-				}else{
-					fasta_name = given_name.substr(0,given_name.rfind(".fastq"));
-					fasta_name += ".fasta";
-				}
-				char* writable = new char [fasta_name.size()+1];
-				copy(fasta_name.begin(), fasta_name.end(), writable);
-				writable[fasta_name.size()] = '\0'; 
-                        	res = remove_entry(writable, false);
-				delete[] writable;
-				int count = 0;
-				Leon *leonRemove = new Leon();
-                		char** args = prep_args(fullPath, false, !isFastq, true,count);
-                		leonRemove->run(count, args);
-                		leonRemove->removeEntireFileConfig();
-				delete leonRemove;
-			}else{
-				res = remove_entry(fullPath, false);
-				string fasta_name;
-				 if(given_name.rfind(".fasta") == string::npos)
-                                {
-                                        fasta_name = given_name.substr(0,given_name.rfind(".fa"));
-                                        fasta_name += ".fq";
-                                }else{
-                                        fasta_name = given_name.substr(0,given_name.rfind(".fasta"));
-                                        fasta_name += ".fastq";
-                                }
-                                char* writable = new char [fasta_name.size()+1];
-                                copy(fasta_name.begin(), fasta_name.end(), writable);
-                                writable[fasta_name.size()] = '\0';
-                                res = remove_entry(writable, true);
-                                delete[] writable;
-				int count = 0;
-				Leon *leonRemove = new Leon();
-                                char** args = prep_args(fullPath, false, !isFastq, true,count);
-                                leonRemove->run(count, args);
-                                leonRemove->removeEntireFileConfig();
-                                delete leonRemove;
-			}
+			res = remove_file(fullPath);
 		}else{
 			res = unlink(fullPath);
 		}
@@ -2424,6 +2435,83 @@ error:
 			fuse_reply_err(req, res);
 		if (fullPath)
 			free(fullPath);
+	}
+	//removes the fasta/fastq files present in the directory to be removed from map
+	static void remove_directory_from_map(char* fullPath, bool deleteFile){
+		DIR           *d;
+                struct dirent *dir;
+                d = opendir(fullPath);
+                if (d)
+                {
+                        while ((dir = readdir(d)) != NULL)
+                        {
+                                string entry_name;
+                                char* point;
+                                entry_name = fullPath;
+                                entry_name += "/";
+                                entry_name +=  dir->d_name;
+                                StackFS_trace("%s\n", entry_name.c_str());
+                                char* temp_name = new char[entry_name.size()+1];
+                                strcpy(temp_name, entry_name.c_str());
+                                string visible_name = entry_name;
+                                if((point = strrchr(temp_name,'.')) != NULL && strcmp(point, ".leon")==0){
+                                        if(entry_name.rfind(".fastq")!=string::npos){
+						 visible_name = entry_name.substr(0,  entry_name.rfind(".fastq") + 6);
+                                        }else if(entry_name.rfind(".fasta")!=string::npos){
+                                                visible_name = entry_name.substr(0,  entry_name.rfind(".fasta") + 6);
+                                        }else if(entry_name.rfind(".fq")!=string::npos){
+                                                visible_name = entry_name.substr(0,  entry_name.rfind(".fq") + 3);
+                                        }else if(entry_name.rfind(".fa")!=string::npos){
+                                                visible_name = entry_name.substr(0,  entry_name.rfind(".fa") + 3);
+                                        }else{
+                                                visible_name = entry_name;
+                                        }
+                                        StackFS_trace("File found : %s", visible_name.c_str());
+                                }else{
+                                        visible_name = entry_name;
+                                }
+                                if(g_hash_table_contains(file_table, visible_name.c_str())){
+                                        struct file_pages * fp = (struct file_pages*)
+                                                        g_hash_table_lookup(file_table, visible_name.c_str());
+                                        StackFS_trace("File found : %s removing %p", visible_name.c_str(), fp);
+                                        struct file_pages * current = fp;
+                                        while(current!=NULL && current->next_page!=NULL){
+                                                current = current->next_page;
+                                        }
+                                        while(current!=NULL && current!=fp){
+                                                current = current->prev_page;
+                                                if(current->next_page!=NULL){
+                                                        free(current->next_page->file_page);
+                                                        free(current->next_page);
+                                                        current->next_page = NULL;
+                                                }
+                                        }
+                                        delete fp->leon;
+					if(fp!=NULL){
+                                                free(fp->file_page);
+                                                free(fp);
+                                                fp = NULL;
+                                        }
+                                        pthread_spin_lock(&spinlock);
+                                        g_hash_table_remove(file_table, visible_name.c_str());
+                                        pthread_spin_unlock(&spinlock);
+                                }
+                                if(g_hash_table_contains(file_cache, visible_name.c_str())){
+                                        struct file_node * fn = (struct file_node*)
+                                                g_hash_table_lookup(file_cache, visible_name.c_str());
+                                        fn->prev->next = fn->next;
+                                        fn->next->prev = fn->prev;
+                                        free(fn);
+                                        pthread_spin_lock(&spinlock);
+                                        g_hash_table_remove(file_cache, visible_name.c_str());
+                                        pthread_spin_unlock(&spinlock);
+                                }
+				if(deleteFile)
+                                	unlink(entry_name.c_str());
+                                delete(temp_name);
+                        }
+                        closedir(d);
+		}						
 	}
 
 	static void stackfs_ll_rmdir(fuse_req_t req, fuse_ino_t parent,
@@ -2440,80 +2528,10 @@ error:
 		DIR           *d;
   		struct dirent *dir;
   		d = opendir(fullPath);
-  		if (d)
-  		{
-    			while ((dir = readdir(d)) != NULL)
-    			{
-				string entry_name;
-				char* point;
-				entry_name = fullPath;
-				entry_name += "/";
-				entry_name +=  dir->d_name;
-      				StackFS_trace("%s\n", entry_name.c_str());
-				char* temp_name = new char[entry_name.size()+1];
-				strcpy(temp_name, entry_name.c_str());
-				string visible_name = entry_name;
-				if((point = strrchr(temp_name,'.')) != NULL && strcmp(point, ".leon")==0){
-					if(entry_name.rfind(".fastq")!=string::npos){
-						visible_name = entry_name.substr(0,  entry_name.rfind(".fastq") + 6);
-					}else if(entry_name.rfind(".fasta")!=string::npos){
-						visible_name = entry_name.substr(0,  entry_name.rfind(".fasta") + 6);
-					}else if(entry_name.rfind(".fq")!=string::npos){
-						visible_name = entry_name.substr(0,  entry_name.rfind(".fq") + 3);
-					}else if(entry_name.rfind(".fa")!=string::npos){
-						visible_name = entry_name.substr(0,  entry_name.rfind(".fa") + 3);
-					}else{
-						visible_name = entry_name;
-					}
-					StackFS_trace("File found : %s", visible_name.c_str());
-				}else{
-					visible_name = entry_name;
-				}
-				if(g_hash_table_contains(file_table, visible_name.c_str())){
-					struct file_pages * fp = (struct file_pages*) 
-							g_hash_table_lookup(file_table, visible_name.c_str());
-					StackFS_trace("File found : %s removing %p", visible_name.c_str(), fp);
-					struct file_pages * current = fp;
-					while(current!=NULL && current->next_page!=NULL){
-						current = current->next_page;
-					}
-					while(current!=NULL && current!=fp){
-						current = current->prev_page;
-						if(current->next_page!=NULL){
-							free(current->next_page->file_page);
-							free(current->next_page);
-							current->next_page = NULL;
-						}
-					}
-					delete fp->leon;
-					if(fp!=NULL){
-						free(fp->file_page);
-						free(fp);
-						fp = NULL;
-					}
-					pthread_spin_lock(&spinlock);
-					g_hash_table_remove(file_table, visible_name.c_str());
-					pthread_spin_unlock(&spinlock);
-				}
-				if(g_hash_table_contains(file_cache, visible_name.c_str())){
-					struct file_node * fn = (struct file_node*) 
-						g_hash_table_lookup(file_cache, visible_name.c_str());
-					fn->prev->next = fn->next;
-					fn->next->prev = fn->prev;
-					free(fn);
-					pthread_spin_lock(&spinlock);
-					g_hash_table_remove(file_cache, visible_name.c_str());
-					pthread_spin_unlock(&spinlock);
-				}
-				unlink(entry_name.c_str());
-				delete(temp_name);
-			}
-			closedir(d);
-		}
+		remove_directory_from_map(fullPath, true);
 		res = rmdir(fullPath);
 		generate_end_time(req);
 		populate_time(req);
-
 		if (res == -1)
 			fuse_reply_err(req, errno);
 		else
@@ -2536,6 +2554,126 @@ error:
 
 		(void) res;
 	}
+	
+	static void stackfs_ll_rename(fuse_req_t req, fuse_ino_t parent, const char* from, 
+			fuse_ino_t new_parent, const char* to, unsigned int flags)
+        {
+		int res = 0;
+		struct stat statbuf;
+		char * f_name = lo_name(req, parent);
+		char* f_fullPath = (char *)malloc(PATH_MAX);
+                construct_full_path(req, parent, f_fullPath, from);
+		char * t_name = lo_name(req, new_parent);
+		char* t_fullPath = (char *)malloc(PATH_MAX);
+                construct_full_path(req, new_parent, t_fullPath, to);
+                generate_start_time(req);
+                StackFS_trace("Rename : from: %s, to: %s, from Name:%s, to_name:%s",
+					f_name, t_name, from, to);
+		char * point = NULL;
+		char* point2 = NULL;
+                string checkTemp(f_fullPath);
+		string checkTemp2(t_fullPath);
+                if((point = strrchr(f_fullPath,'.')) != NULL && checkTemp.find(TMP_FILE)==string::npos &&
+                                (strcmp(point, ".fasta")==0||strcmp(point, ".fastq")==0
+                                 ||strcmp(point, ".fa")==0||strcmp(point, ".fq")==0)
+			&& (point2 = strrchr(t_fullPath,'.')) != NULL && checkTemp2.find(TMP_FILE)==string::npos &&
+                                (strcmp(point2, ".fasta")==0||strcmp(point2, ".fastq")==0
+                                 ||strcmp(point2, ".fa")==0||strcmp(point2, ".fq")==0)){
+			if(strcmp(point, point2)==0){
+				bool isFastq = false;
+				string f_file_name (f_fullPath);
+				string t_file_name (t_fullPath);
+				string f_real_name (f_file_name + "_0" + EXT);
+				string t_real_name (t_file_name + "_0" + EXT);
+				string f_qual_name (f_file_name + "_0" + ".qual");
+				string t_qual_name (t_file_name + "_0" + ".qual");
+				int block_id = 0;
+				struct stat buffer;
+				if(strcmp(point, ".fastq")==0 || strcmp(point, ".fq")==0)
+					isFastq = true;
+				while(stat(f_real_name.c_str(), &buffer) == 0) {
+					res = rename(f_real_name.c_str(), t_real_name.c_str());
+					if(isFastq && stat(f_qual_name.c_str(), &buffer) == 0){
+						res = rename(f_qual_name.c_str(), t_qual_name.c_str());
+					}
+					block_id++;
+					f_real_name = f_file_name + "_" + to_string(block_id) + EXT;
+					t_real_name = t_file_name + "_" + to_string(block_id) + EXT;
+					f_qual_name = f_file_name + "_" + to_string(block_id) + ".qual";
+					t_qual_name = t_file_name + "_" + to_string(block_id) + ".qual";
+				}
+				int count = 0;
+				Leon *leonRemove = new Leon();
+				char** args = prep_args(f_fullPath, false, !isFastq, true,count);
+				leonRemove->run(count, args);
+				leonRemove->renameConfig(to, t_fullPath);
+				delete leonRemove;
+				if(g_hash_table_contains(file_table,f_fullPath)){
+					struct file_pages * fp = (struct file_pages*) 
+						g_hash_table_lookup(file_table, f_fullPath);
+					StackFS_trace("File found : %s removing %p", f_fullPath, fp);
+					struct file_pages * current = fp;
+					while(current!=NULL && current->next_page!=NULL){
+						current = current->next_page;
+					}
+					while(current!=NULL && current!=fp){
+						current = current->prev_page;
+						if(current->next_page!=NULL){
+							free(current->next_page->file_page);
+							free(current->next_page);
+							current->next_page = NULL;
+						}
+					}
+					delete fp->leon;
+					if(fp!=NULL){
+						free(fp->file_page);
+						free(fp);
+						fp = NULL;
+					}
+					pthread_spin_lock(&spinlock);
+					g_hash_table_remove(file_table,f_fullPath);
+					pthread_spin_unlock(&spinlock);
+				}
+				if(g_hash_table_contains(file_cache, f_fullPath)){
+					struct file_node * fn = (struct file_node*) 
+						g_hash_table_lookup(file_cache, f_fullPath);
+					fn->prev->next = fn->next;
+					fn->next->prev = fn->prev;
+					free(fn);
+					pthread_spin_lock(&spinlock);
+					g_hash_table_remove(file_cache, f_fullPath);
+					pthread_spin_unlock(&spinlock);
+				}
+			}else{
+				res = -1;
+				errno = -EPERM;
+			}
+		}else if((point = strrchr(f_fullPath,'.')) != NULL && checkTemp.find(TMP_FILE)==string::npos &&
+				(strcmp(point, ".fasta")==0||strcmp(point, ".fastq")==0
+				 ||strcmp(point, ".fa")==0||strcmp(point, ".fq")==0)){
+			remove_file(f_fullPath);	
+		}else if((point2 = strrchr(t_fullPath,'.')) != NULL && checkTemp2.find(TMP_FILE)==string::npos &&
+				(strcmp(point2, ".fasta")==0||strcmp(point2, ".fastq")==0
+				 ||strcmp(point2, ".fa")==0||strcmp(point2, ".fq")==0)){
+			rename(f_fullPath, t_fullPath);
+			create_file(t_fullPath);
+		}else{
+			if(stat(f_fullPath, &statbuf) == 0 && S_ISDIR(statbuf.st_mode)){
+				remove_directory_from_map(f_fullPath, false);
+			}
+			if((point = strrchr(f_fullPath,'.'))!=NULL && (strcmp(point, ".leon")==0)){
+
+			}else{
+				rename(f_fullPath, t_fullPath);	
+			}
+		}
+		generate_end_time(req);
+		populate_time(req);
+		if (res == -1)
+			fuse_reply_err(req, errno);
+		else
+			fuse_reply_err(req, res);
+	}	
 
 	static void stackfs_ll_forget(fuse_req_t req, fuse_ino_t ino, uint64_t nlookup)
 	{
@@ -2748,6 +2886,7 @@ int main(int argc, char **argv)
 	hello_ll_oper.mkdir   = stackfs_ll_mkdir;
 	hello_ll_oper.unlink  = stackfs_ll_unlink;
 	hello_ll_oper.rmdir   = stackfs_ll_rmdir;
+	hello_ll_oper.rename  = stackfs_ll_rename,
 	hello_ll_oper.open    = stackfs_ll_open;
 	hello_ll_oper.read    = stackfs_ll_read;
 	hello_ll_oper.write   = stackfs_ll_write;
