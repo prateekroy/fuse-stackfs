@@ -222,18 +222,11 @@ void Leon::execute()
 	_isFasta = true;
 	_nb_cores = getInput()->getInt(STR_NB_CORES);
 	_inputFilename = getInput()->getStr (STR_URI_FILE);
-	string base_name = System::file().getBaseName (_inputFilename);
 	_real_inputFilename = _inputFilename;
-	string dir = System::file().getDirectory(_inputFilename);
-	if(_inputFilename.find(".fq") !=  string::npos || _inputFilename.find(".fastq") !=  string::npos)
-        {
-                if(! getParser()->saw (Leon::STR_DNA_ONLY) && ! getParser()->saw (Leon::STR_NOQUAL))
-                        _isFasta = false;
-        }
-	if(_isFasta)
-		_base_outputFilename = dir+"/"+base_name+".fasta";
-	else
-		_base_outputFilename = dir+"/"+base_name+".fastq";
+        if(! getParser()->saw (Leon::STR_NOQUAL)){
+        	_isFasta = false;
+	}
+	_base_outputFilename = _inputFilename;
 	_numericModel.clear();
 	for(int i=0; i<CompressionUtils::NB_MODELS_PER_NUMERIC; i++){
 		_numericModel.push_back(Order0Model(256));
@@ -340,9 +333,6 @@ void Leon::executeCompression(int block_id,const char* file_name){
         /** We look for the beginnin of the suffix. */
         int lastindex = _inputFilename.find_last_of (".");
 
-        /** We build the result. */
-        string extension = _inputFilename.substr(lastindex+1);
-
         _noHeader =false;
 
 
@@ -372,38 +362,6 @@ void Leon::executeCompression(int block_id,const char* file_name){
 	setInputBank (Bank::open(_inputFilename));
 		
 
-	if(_inputFilename.find(".fq") !=  string::npos || _inputFilename.find(".fastq") !=  string::npos)
-        {
-                cout << "\tInput format: Fastq";
-
-                if(! getParser()->saw (Leon::STR_DNA_ONLY) && ! getParser()->saw (Leon::STR_NOQUAL))
-                {
-
-                        if (_lossless)
-                                cout << ", compressing qualities in lossless mode" << endl;
-                        else
-                                cout << ", compressing qualities in lossy mode (use -lossless for lossless compression)"<< endl;
-
-                        _isFasta = false;
-
-                }
-
-
-        }
-        //attentio a l ordre, ".fa" est aussi present dans .fastq
-        else if (_inputFilename.find(".fa") !=  string::npos || _inputFilename.find(".fasta") !=  string::npos) {
-                //#ifdef PRINT_DEBUG
-                cout << "\tInput format: Fasta" << endl;
-                //#endif
-                infoByte |= 0x01;
-                _isFasta = true;
-
-        }
-	else
-        {
-                cout << "\tUnknown input extension. Input extension must be one among fasta (.fa, .fasta) or fastq (.fq, .fastq)" << endl;
-                return;
-        }
         _rangeEncoder.encode(_generalModel, infoByte);
 
         CompressionUtils::encodeNumeric(_rangeEncoder, _numericModel, _kmerSize);
@@ -630,9 +588,9 @@ void Leon::readConfig(char* config_file, char* input){
 				Setting &fastq = file[FASTQ];
                                 const Setting &block = fastq[1];
                                 int cnt = block.getLength();
-                                orig_block_size->clear();
+                                fastq_block_size->clear();
                                 for(int j=0;j<cnt;j++){
-                                        orig_block_size->push_back(block[j]);
+                                        fastq_block_size->push_back(block[j]);
                                 }
                                 const Setting &seq = fastq[0];
                                 cnt = seq.getLength();
@@ -648,13 +606,21 @@ void Leon::readConfig(char* config_file, char* input){
 int Leon::getFileSize(char* config_file, char* input){
 	readConfig(config_file, input);
 	int size = 0;
-        for(int i=0;i<orig_block_size->size();i++)
-        	size += (*orig_block_size)[i];
+	if(_isFasta){
+        	for(int i=0;i<orig_block_size->size();i++)
+        		size += (*orig_block_size)[i];
+	}else{
+		for(int i=0;i<fastq_block_size->size();i++)
+                        size += (*fastq_block_size)[i];
+	}
 	return size;
 }
 
 vector<int>* Leon::getBlockSizes(){
-	return orig_block_size;
+	if(_isFasta)
+		return orig_block_size;
+	else
+		return fastq_block_size;
 }
 
 void Leon::removeEntireFileConfig(){
@@ -998,31 +964,47 @@ void Leon::saveConfig(){
 				Setting &fastq = file.add(FASTQ, Setting::TypeGroup);
 				Setting &seq = fastq.add(SEQ, Setting::TypeList);
 				Setting &blockSize  = fastq.add(BLOCK, Setting::TypeList);
+				Setting &fasta = file.add(FASTA, Setting::TypeGroup);
+                                Setting &f_seq = fasta.add(SEQ, Setting::TypeList);
+                                Setting &f_blockSize  = fasta.add(BLOCK, Setting::TypeList);
 				for(int i=0;i<seq_per_block->size();i++){
-					blockSize.add(Setting::TypeInt)= (*orig_block_size)[i];
+					blockSize.add(Setting::TypeInt)= (*fastq_block_size)[i];
+					f_blockSize.add(Setting::TypeInt)= (*orig_block_size)[i];
 					seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+					f_seq.add(Setting::TypeInt) = (*seq_per_block)[i];
 				}
 			}else{	
 				Setting &fastq = file[FASTQ];
 				Setting &seq = fastq[SEQ];
 				Setting &blockSize  = fastq[BLOCK];
+				Setting &fasta = file[FASTA];
+                                Setting &f_seq = fasta[SEQ];
+                                Setting &f_blockSize  = fasta[BLOCK];
 				if(_compress_entire){
 					for(int i=0;i<seq_per_block->size();i++){
 						if(i< blockSize.getLength()){
-							blockSize[i]= (*orig_block_size)[i];
+							blockSize[i]= (*fastq_block_size)[i];
+							f_blockSize[i]= (*orig_block_size)[i];
 							seq[i] = (*seq_per_block)[i];
+							f_seq[i] = (*seq_per_block)[i];
 						}else{
-							blockSize.add(Setting::TypeInt) = (*orig_block_size)[i];
+							blockSize.add(Setting::TypeInt) = (*fastq_block_size)[i];
 							seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+							f_blockSize.add(Setting::TypeInt) = (*orig_block_size)[i];
+                                                        f_seq.add(Setting::TypeInt) = (*seq_per_block)[i];
 						}
 					}
 				}else{
 					if(block_id_to_compress < blockSize.getLength()){
-						blockSize[block_id_to_compress] = (*orig_block_size)[0];
+						blockSize[block_id_to_compress] = (*fastq_block_size)[0];
 						seq[block_id_to_compress] = (*seq_per_block)[0];
+						f_blockSize[block_id_to_compress] = (*orig_block_size)[0];
+                                                f_seq[block_id_to_compress] = (*seq_per_block)[0];
 					}else{
-						blockSize.add(Setting::TypeInt) = (*orig_block_size)[0];
+						blockSize.add(Setting::TypeInt) = (*fastq_block_size)[0];
 						seq.add(Setting::TypeInt) = (*seq_per_block)[0];
+						f_blockSize.add(Setting::TypeInt) = (*orig_block_size)[0];
+                                                f_seq.add(Setting::TypeInt) = (*seq_per_block)[0];
 					}
 				}
 			}
@@ -1046,8 +1028,13 @@ void Leon::saveConfig(){
 			Setting &fastq = file.add(FASTQ, Setting::TypeGroup);
                         Setting &seq = fastq.add(SEQ, Setting::TypeList);
                         Setting &blockSize  = fastq.add(BLOCK, Setting::TypeList);
+			Setting &fasta = file.add(FASTA, Setting::TypeGroup);
+                        Setting &f_seq = fasta.add(SEQ, Setting::TypeList);
+                        Setting &f_blockSize  = fasta.add(BLOCK, Setting::TypeList);
                         for(int i=0;i<seq_per_block->size();i++){
-                                blockSize.add(Setting::TypeInt)= (*orig_block_size)[i];
+                                f_blockSize.add(Setting::TypeInt)= (*orig_block_size)[i];
+                                f_seq.add(Setting::TypeInt) = (*seq_per_block)[i];
+				blockSize.add(Setting::TypeInt)= (*fastq_block_size)[i];
                                 seq.add(Setting::TypeInt) = (*seq_per_block)[i];
                         }
 		}
@@ -1669,10 +1656,18 @@ int Leon::findBlockId(int off, int &blockOff){
 	int seqNo = 0;
 	int blockId = 0;
 	blockOff = 0;
-	while(seqNo < orig_block_size->size() && off> (*orig_block_size)[seqNo]){
-		off -= (*orig_block_size)[seqNo];
-		seqNo++;
-		blockId++;
+	if(_isFasta){
+		while(seqNo < orig_block_size->size() && off> (*orig_block_size)[seqNo]){
+			off -= (*orig_block_size)[seqNo];
+			seqNo++;
+			blockId++;
+		}
+	}else{
+		while(seqNo < fastq_block_size->size() && off> (*fastq_block_size)[seqNo]){
+                        off -= (*fastq_block_size)[seqNo];
+                        seqNo++;
+                        blockId++;
+                }
 	}
 	blockOff = off;
 	cout<<endl<<"block Id: "<<blockId<<" block Off: "<<blockOff<<endl;
