@@ -2587,8 +2587,8 @@ static void stackfs_ll_rename(fuse_req_t req, fuse_ino_t parent, const char* fro
     	string t_real_name (t_file_name + "_0" + EXT);
         string f_qual_name (f_file_name + "_0" + ".qual");
         string t_qual_name (t_file_name + "_0" + ".qual");
-	string val(value);
         int ret = lgetxattr(f_real_name.c_str(), ORIG_ATTR, value, ATTR_SIZE);
+	string val(value);
 	if(ret > 0 && (val.find(FASTA)!=string::npos  || val.find(FASTQ)!=string::npos  ||
 				val.find(LEON)!=string::npos )){
 		bool isFastq = false;
@@ -2797,12 +2797,6 @@ static void stackfs_ll_getxattr(fuse_req_t req, fuse_ino_t ino,
 	}
 }
 
-static void setAttr(const char* fname, const char* name, const char* value, size_t size,
-				int flags){
-	
-
-}
-
 static void stackfs_ll_setxattr(fuse_req_t req, fuse_ino_t ino,
                 const char *name, const char* value, size_t size, int flags)
 {
@@ -2818,11 +2812,11 @@ static void stackfs_ll_setxattr(fuse_req_t req, fuse_ino_t ino,
 		res = -1;
 		errno = ENOTSUP;
 		if(strcmp(name, ATTR)==0){
-       	 		char vl[6];
+       	 		char vl[ATTR_SIZE];
        	 		int ret = lgetxattr(fname, ATTR, vl, ATTR_SIZE);
-			char orig_val[6];
+			char orig_val[ATTR_SIZE];
 			int orig_ret = lgetxattr(fname, ORIG_ATTR, orig_val, ATTR_SIZE);
-			StackFS_trace("Function Trace : 1Setxattr %s, %s, %s\n", orig_val, vl, value);
+			StackFS_trace("Function Trace : 1Setxattr %s, %s, %s, %d\n", orig_val, vl, value, size);
 			string val(vl);
 			string orig_vl(orig_val);
 			string newVal(value);
@@ -2831,17 +2825,20 @@ static void stackfs_ll_setxattr(fuse_req_t req, fuse_ino_t ino,
 			//FASTQ->LEON.
 			if(ret > 0 && (val.find(FASTA)!=string::npos  || val.find(FASTQ)!=string::npos ||
 					val.find(LEON)!=string::npos )) {
-				if(val.find(FASTA)!=string::npos && (strcmp(value, LEON)==0 ||
-						strcmp(value, FASTA)==0 || 
-					(orig_vl.find(FASTQ)!=string::npos  && strcmp(value, FASTQ)==0))){
+				if(val.find(FASTA)!=string::npos && ((size ==4 && strncmp(value, LEON, size)==0) ||
+						(size == 5 && strncmp(value, FASTA, size)==0) || 
+					(size == 5 && orig_vl.find(FASTQ)!=string::npos  && 
+					strncmp(value, FASTQ, size)==0))){
 					res = lsetxattr(fname, name, value, size, flags);
-				}else if(val.find(FASTQ)!=string::npos  && (strcmp(value, LEON)==0 ||
-                                                strcmp(value, FASTA)==0 || strcmp(value, FASTQ)==0)){	
+				}else if(val.find(FASTQ)!=string::npos  && ((size ==4 && strncmp(value, LEON, size)==0) ||
+                                                (size ==5 && strncmp(value, FASTA, size)==0) || 
+						(size==5 && strncmp(value, FASTQ, size)==0))){	
         				res = lsetxattr(fname, name, value, size, flags);
 					StackFS_trace("Function Trace : Setxattr %s, %s, %s", orig_val, vl, value);
-				}else if(val.find(LEON)!=string::npos  && (strcmp(value, LEON)==0 ||
-                                                strcmp(value, FASTA)==0 || 
-					(orig_vl.find(FASTQ)!=string::npos  && strcmp(value, FASTQ)==0))){
+				}else if(val.find(LEON)!=string::npos  && ((size==4 && strncmp(value, LEON, 4)==0) ||
+                                                (size==5 && strncmp(value, FASTA, size)==0) || 
+					(size == 5 && orig_vl.find(FASTQ)!=string::npos  
+							&& strncmp(value, FASTQ, size)==0))){
 					res = lsetxattr(fname, name, value, size, flags);
 				}
 			}
@@ -2900,6 +2897,48 @@ static void stackfs_ll_setxattr(fuse_req_t req, fuse_ino_t ino,
 		fuse_reply_buf(req, value, res);
 	else
 		fuse_reply_err(req, errno);
+}
+
+static void stackfs_ll_listxattr(fuse_req_t req, fuse_ino_t ino, size_t size)
+{
+	int res;
+        struct stat buf;
+        char* fullPath = lo_name(req, ino);
+        StackFS_trace("Function Trace : Getxattr %s", fullPath);
+        if (size) {
+                char *value = (char *) malloc(size);
+                generate_start_time(req);
+                char* fname = (char*) malloc(PATH_MAX);
+                strcpy(fname, fullPath);
+                strcat(fname, "_0.leon");
+                if(stat(fname, &buf)==0)
+                        res = llistxattr(fname, value, size);
+                else
+                        res = llistxattr(lo_name(req, ino), value, size);
+                generate_end_time(req);
+                populate_time(req);
+                if (res > 0)
+                        fuse_reply_buf(req, value, res);
+                else
+                        fuse_reply_err(req, errno);
+
+                free(value);
+        } else {
+                generate_start_time(req);
+                char* fname = (char*) malloc(PATH_MAX);
+                strcpy(fname, fullPath);
+                strcat(fname, "_0.leon");
+                if(stat(fname, &buf)==0)
+                        res = llistxattr(fname, NULL, 0);
+                else
+                        res = llistxattr(lo_name(req, ino), NULL, 0);
+                generate_end_time(req);
+		populate_time(req);
+		if (res >= 0)
+			fuse_reply_xattr(req, res);
+		else
+			fuse_reply_err(req, errno);
+	}
 }
 
 static struct fuse_lowlevel_ops hello_ll_oper = {};
@@ -2999,7 +3038,8 @@ int main(int argc, char **argv)
 	hello_ll_oper.statfs  = stackfs_ll_statfs;
 //#if     TESTING_XATTR
 	hello_ll_oper.getxattr = stackfs_ll_getxattr;
-	hello_ll_oper.setxattr = stackfs_ll_setxattr;	
+	hello_ll_oper.setxattr = stackfs_ll_setxattr;
+	hello_ll_oper.listxattr = stackfs_ll_listxattr;	
 //#endif
 	hello_ll_oper.create = stackfs_ll_create;
 #if     USE_SPLICE
