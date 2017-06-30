@@ -1911,23 +1911,22 @@ static void stackfs_ll_release(fuse_req_t req, fuse_ino_t ino,
 		if(created_files_map[name] == FASTA_F){
 			create_file(name);
 			strcpy(value, FASTA);
-			if(setxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
+			if(lsetxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
 				StackFS_trace("Error in setxattr");
-			setxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
+			lsetxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
 		}
 		else if(created_files_map[name] == FASTQ_F){
 			create_file(name);
 			strcpy(value, FASTQ);
-			if(setxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
+			if(lsetxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
                                 StackFS_trace("Error in setxattr");
-			setxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
+			lsetxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
 		}
 		else if(created_files_map[name] == LEON_F){
-			create_file(name);
 			strcpy(value, LEON);
-			if(setxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
+			if(lsetxattr(name, ATTR, value, ATTR_SIZE, 0)==-1)
                                 StackFS_trace("Error in setxattr");
-			setxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE-1, 0);
+			lsetxattr(name, ORIG_ATTR, value, ATTR_SIZE-1, 0);
 		}
 		created_files_map.erase(name);
 	}
@@ -2013,7 +2012,10 @@ static bool detect_fasta(const char* buf, size_t size){
 }	
 
 static bool detect_leon(const char* buf, size_t size){
-	return false;
+	if(buf[0]=='L')
+		return true;
+	else
+               	return false;
 }
 static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 		size_t size, off_t off, struct fuse_file_info *fi)
