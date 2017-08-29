@@ -52,6 +52,7 @@ FILE *logfile;
 #define PG_SIZE 4096
 #define TRACE_FILE "/trace_stackfs.log"
 #define TRACE_FILE_LEN 18
+
 pthread_spinlock_t spinlock; /* Protecting the above spin lock */
 char banner[4096];
 GHashTable* file_table;
@@ -80,6 +81,10 @@ struct file_pages{
 	long size;
 	int dirty;
 	bool sequenceAdded;
+        int seq_size_A;
+        int last_file_size_A;
+ 	int seq_size_Q;
+        int last_file_size_Q;
 	struct file_pages* prev_page;
 	struct file_pages* next_page;
 };
@@ -151,8 +156,8 @@ void splitCopy(int argc, char* argv[],const char* tmp_file, int block_id){
 			"Creating Temp Files"
 			);
 	string line;
-	leon->orig_block_size->clear();
-	leon->seq_per_block->clear();
+	//leon->orig_block_size->clear();
+	//leon->seq_per_block->clear();
 	bool more_lines = true;
 	bool first_time = true;
 	itSeq->first();
@@ -205,14 +210,14 @@ void splitCopy(int argc, char* argv[],const char* tmp_file, int block_id){
 			j++;
 			itSeq->next();
 		}
-		leon->orig_block_size->push_back(size);
-		leon->seq_per_block->push_back(j);
+		//leon->orig_block_size->push_back(size);
+		//leon->seq_per_block->push_back(j);
 		fout.close();
 		leon1->executeCompression(block_count, temp_file.c_str());
 		block_count++;
 		delete leon1;
 	}
-	leon->saveConfig();
+	//leon->saveConfig();
 	delete leon;
 }
 
@@ -724,6 +729,107 @@ find_out:
 	pthread_spin_unlock(&lo_data->spinlock);
 	return lo_inode;
 }
+
+static int getSeqSize(string s,string file_format){
+	string line="";
+        stringstream ss(s);
+	int lineCount = 0;
+	int seq_size = 0;
+	if(file_format.find(FASTA)!=string::npos){
+		lineCount = 2;
+	}else{
+		lineCount = 4;
+	}
+	while(lineCount>0){
+		if(getline(ss, line)){
+			seq_size += line.size();
+		}
+		lineCount--;
+	}
+        return seq_size;
+}
+
+static int getFileCount(char* filebase){
+	string base(filebase);
+        string filename;
+        struct stat buffer;
+	int count = 0;
+        filename = base+"_0"+EXT;
+        while(stat(filename.c_str(), &buffer)==0){
+		count++;
+		filename = base + "_" + to_string(count)+EXT;
+	}
+	StackFS_trace("Final file name : %s, count : %d",filename.c_str(), count);
+	return count-1;
+}
+
+static int getSeqCount(string s, string file_format){
+	int lineCount = 0;
+       	string line;
+        stringstream ss(s);
+        while(getline(ss, line)){
+		lineCount++;
+	}
+        if(file_format.find(FASTA)!=string::npos){
+                lineCount /= 2;
+        }else{
+                lineCount /= 4;
+        }
+	return lineCount;
+}
+
+static int get_file_size(char* fullPath, string val){
+	int file_count = getFileCount(fullPath);
+	int last_file_size = -1;
+        int ret = 0;
+	if(g_hash_table_contains(file_table, fullPath)){
+		struct file_pages* fp = (struct file_pages*)g_hash_table_lookup
+			(file_table, fullPath);
+		if(val.find(FASTA)!=string::npos){
+                        last_file_size = fp->last_file_size_A;
+                }else{
+                        last_file_size = fp->last_file_size_Q;
+                }
+	}
+	Leon* leon = new Leon();
+	if(last_file_size ==-1){
+		int count = 0;
+		char** args;
+		if(val.find(FASTA)!=string::npos){
+			args = prep_args(fullPath,false, true, true,count);
+		}else{
+			args = prep_args(fullPath,false, false, true,count);
+		}
+		leon->run(count, args);
+		vector<string>* out =leon->executeDecompression(file_count);
+		int seq_size = getSeqSize((*out)[0], val);
+		ret = (seq_size * leon->READ_PER_BLOCK * file_count) + (*out)[0].size();
+		if(g_hash_table_contains(file_table, fullPath)){
+			struct file_pages* fp = (struct file_pages*)g_hash_table_lookup
+				(file_table, fullPath);
+			if(val.find(FASTA)!=string::npos){
+				fp->last_file_size_A = (*out)[0].size();
+				fp->seq_size_A = seq_size;
+			}else{
+				fp->last_file_size_Q = (*out)[0].size();
+				fp->seq_size_Q = seq_size;
+			}
+		}
+		delete out;
+		delete leon;
+	}else{
+		struct file_pages* fp = (struct file_pages*)g_hash_table_lookup (file_table, fullPath);
+		if(val.find(FASTA)!=string::npos){
+			ret = (fp->seq_size_A * leon->READ_PER_BLOCK * file_count) +
+					fp->last_file_size_A;
+		}else{
+			ret = (fp->seq_size_Q * leon->READ_PER_BLOCK * file_count) +
+                                        fp->last_file_size_Q;
+		}
+	}
+	return ret;
+}
+
 static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 		const char *name)
 {
@@ -751,7 +857,7 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 	strcpy(fname, fullPath);
 	strcat(fname, "_0.leon");
 	char value[ATTR_SIZE];
-        int ret = lgetxattr(fname, ATTR, value, ATTR_SIZE);
+	int ret = lgetxattr(fname, ATTR, value, ATTR_SIZE);
 	string val(value);
 	free(fname);
 	fname = NULL;
@@ -767,22 +873,7 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 		file_name[len-1] = '\0';
 		if(stat(file_name, &buffer) == 0) {
 			res = stat(file_name, &e.attr);
-			Leon* leon = new Leon();
-			int count = 0;
-			char** args;
-			if(val.find(FASTA)!=string::npos)
-                                args = prep_args(fullPath,false, true, true,count);
-                        else
-                                args = prep_args(fullPath,false, false, true,count);
-			leon->run(count, args);
-			char * config = createFile(file_name, CONFIG);
-			char * point = strrchr(fullPath, '/');
-			char * input = (char *) malloc(PATH_MAX);
-			strcpy(input, point+1);
-			e.attr.st_size = leon->getFileSize(config, input);
-			free(config);
-			free(input);
-			delete leon;
+			e.attr.st_size = get_file_size(fullPath, val);
 		}else{
 			res = stat(fullPath, &e.attr);
 		}
@@ -878,7 +969,6 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 	string val(value);
 	free(fname);
 	fname = NULL;
-
 	if(ret > 0 && (val.find(FASTA)!=string::npos || val.find(FASTQ)!=string::npos )) {
 		struct stat buffer;
 		int len = strlen(name)+EXT_LEN + 3;
@@ -889,22 +979,7 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 		file_name[len-1] = '\0';
 		if(stat(file_name, &buffer) == 0) {
 			res = stat(file_name, &buf);
-			Leon* leon = new Leon();
-			int count = 0;
-			char** args;
-			if(val.find(FASTA)!=string::npos)
-				args = prep_args(name,false, true, true,count);
-			else
-				args = prep_args(name,false, false, true,count);
-			leon->run(count, args);
-			char * config = createFile(file_name, CONFIG);
-			char * point = strrchr(name, '/');
-			char * input = (char *) malloc(PATH_MAX);
-			strcpy(input, point+1);
-			buf.st_size = leon->getFileSize(config, input);
-			free(config);
-			free(input);
-			delete leon;
+                        buf.st_size = get_file_size(name, val);
 		}else{
 			res = stat(name, &buf);
 		}
@@ -1193,12 +1268,15 @@ static void decompress_store(char * name, int fd, int format){
 		fp->prev_page = NULL;
 		fp->next_page = NULL;
 		Leon* leon = new Leon();
+                string file_format;
 		int count = 0;
 		char** args;
 		if(format ==FASTA_F){
 			args = prep_args(name,false, true, true,count);
+                        file_format = "FASTA";
 		}else{
 			args = prep_args(name,false, false, true,count);
+                        file_format = "FASTQ";
 		}
 		leon->run(count, args);
 		vector<string>* out =leon->executeDecompression(0);
@@ -1206,6 +1284,15 @@ static void decompress_store(char * name, int fd, int format){
 		strcpy(current->file_page,(*out)[0].c_str());
 		offSet = strlen(current->file_page)+1;
 		current->s_off = 0;
+		current->seq_size_A = -1;
+		current->seq_size_Q = -1;
+		current->last_file_size_A = -1;
+		current->last_file_size_Q = -1;
+		if(format ==FASTA_F){
+                	current->seq_size_A = getSeqSize((*out)[0], file_format);
+		}else{
+			current->seq_size_Q = getSeqSize((*out)[0], file_format);
+		}
 		current->e_off = (*out)[0].size();
 		current->block_id = 0;
 		current->leon = leon;
@@ -1214,14 +1301,14 @@ static void decompress_store(char * name, int fd, int format){
 		current->size = (*out)[0].size();
 		current->sequenceAdded = false;
 		//current->isFastq = isFastq;
-		char * config = createFile(name, CONFIG);
+		/*char * config = createFile(name, CONFIG);
 		string input(name);
 		size_t file_base = input.find_last_of('/')+1;
 		input = input.substr(file_base);
 		char* test = strdup(input.c_str());
 		leon->readConfig(config, test);
 		free(config);
-		free(test);
+		free(test);*/
 		StackFS_trace("decompress data: %s", current->file_page);	
 		pthread_spin_lock(&spinlock);
 		delete out;
@@ -1273,9 +1360,9 @@ static void splitFiles(int argc, char* argv[], int fast){
 			"Creating Temp Files"
 			);
 	string line;
-	leon->orig_block_size->clear();
-	leon->fastq_block_size->clear();
-	leon->seq_per_block->clear();
+	//leon->orig_block_size->clear();
+	//leon->fastq_block_size->clear();
+	//leon->seq_per_block->clear();
 	bool more_lines = true;
 	bool first_time = true;
 	itSeq->first();
@@ -1331,14 +1418,14 @@ static void splitFiles(int argc, char* argv[], int fast){
 			j++;
 			itSeq->next();
 		}
-		leon->fastq_block_size->push_back(size);
-		leon->orig_block_size->push_back(fasta_size);
-		leon->seq_per_block->push_back(j);
+		//leon->fastq_block_size->push_back(size);
+		//leon->orig_block_size->push_back(fasta_size);
+		//leon->seq_per_block->push_back(j);
 		fout.close();
 		leon1->executeCompression(block_count, temp_file.c_str());
 		block_count++;
 	}
-	leon->saveConfig();
+	//leon->saveConfig();
 }	
 
 static void compress_save(char * name){
@@ -1578,6 +1665,21 @@ static void stackfs_ll_opendir(fuse_req_t req, fuse_ino_t ino,
 	fuse_reply_open(req, fi);
 }
 
+static int findBlockId(int off, int &blockOff, vector<int> block_size){
+        int seqNo = 0;
+        int blockId = 0;
+	blockOff = 0;
+	while(seqNo < block_size.size() && off> block_size[seqNo]){
+		off -= block_size[seqNo];
+		seqNo++;
+		blockId++;
+	}
+	blockOff = off;
+	cout<<endl<<"block Id: "<<blockId<<" block Off: "<<blockOff<<endl;
+	return blockId;
+}
+
+
 static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 		off_t offset, struct fuse_file_info *fi)
 {
@@ -1627,21 +1729,49 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			vector<string>* out;
 			int fromOff = 0, toOff = 0, bufOff = 0;
 			int end_page = (offset+size)/PG_SIZE;
-			int fromBlock = leon->findBlockId(offset, fromOff);
-			int toBlock = leon->findBlockId(offset+size, toOff);
-			vector<int>* block_sizes = leon->getBlockSizes();
-			if(block_sizes!=NULL && fromBlock >= block_sizes->size()){
-				fromBlock = block_sizes->size()-1;
-				fromOff = (*block_sizes)[fromBlock]-1;
+                        int file_count = getFileCount(name);				
+                        int seq_size = 0;
+                        Leon* leonSeq = new Leon();
+                        int count = 0;
+			int last_file_size = -1;
+                        char** targs;
+                        if(current->format == FASTA_F){
+                                targs = prep_args(name,false, true, true,count);
+				seq_size = fp->seq_size_A;
+				last_file_size = fp->last_file_size_A;
+                        }else{
+                                targs = prep_args(name,false, false, true,count);
+				seq_size = fp->seq_size_Q;
+				last_file_size = fp->last_file_size_Q;
+                        }
+			vector<int> block_sizes(file_count, seq_size*leon->READ_PER_BLOCK);
+			if(last_file_size <0){
+				leonSeq->run(count, targs);
+				vector<string>* test =leonSeq->executeDecompression(file_count);
+				if(fp->format ==FASTA_F){
+					fp->last_file_size_A = (*test)[0].size();
+				}else{
+					fp->last_file_size_Q = (*test)[0].size();
+				}
+				block_sizes.push_back((*test)[0].size());
+				delete test;
+				test = NULL;
+			}else
+				block_sizes.push_back(last_file_size);
+			int fromBlock = findBlockId(offset, fromOff, block_sizes);
+			int toBlock = findBlockId(offset+size, toOff, block_sizes);
+			if(fromBlock >= block_sizes.size()){
+				fromBlock = block_sizes.size()-1;
+				fromOff = block_sizes[fromBlock]-1;
 			}
-			if(fromOff>(*block_sizes)[fromBlock])
-				fromOff = (*block_sizes)[fromBlock]-1;
-			if(block_sizes!=NULL && toBlock >= block_sizes->size()){
-				toBlock = block_sizes->size()-1;
-				toOff = (*block_sizes)[toBlock]-1;
+			if(fromOff>block_sizes[fromBlock])
+				fromOff = block_sizes[fromBlock]-1;
+			if(toBlock >= block_sizes.size()){
+				toBlock = block_sizes.size()-1;
+				toOff = block_sizes[toBlock]-1;
 			}
-			if(toOff>(*block_sizes)[toBlock])
-				toOff = (*block_sizes)[toBlock]-1;
+			if(toOff>block_sizes[toBlock])
+				toOff = block_sizes[toBlock]-1;
 			StackFS_trace("The from block: %d to block %d", fromBlock, toBlock);
 			StackFS_trace("The fromOff: %d toOff %d", fromOff, toOff);
 			while(current->block_id < fromBlock){
@@ -1649,13 +1779,14 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 				current = current->next_page;
 				if(current==NULL || current->block_id > fromBlock){
 					Leon *leonRead = new Leon();
-					int count = 0;
+					count = 0;
 					char** args;
-					if(current->format == FASTQ_F)
+					if(fp->format == FASTQ_F)
 						args = prep_args(name, false, false, true,count);
 					else 
 						args = prep_args(name, false, true, true,count);
 					leonRead->run(count, args);
+                                        StackFS_trace("Decompressing New block id:%d", fromBlock);
 					out = leonRead->executeDecompression(fromBlock);
 					delete leonRead;
 					struct file_pages* tmp = pre->next_page;
@@ -1664,6 +1795,10 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 					current->next_page->prev_page = current;
 					current->next_page->next_page = tmp;
 					current->next_page->format = current->format;
+                                        current->next_page->seq_size_A = current->seq_size_A;
+					current->next_page->seq_size_Q = current->seq_size_Q;
+					current->next_page->last_file_size_A = current->last_file_size_A;
+					current->next_page->last_file_size_Q = current->last_file_size_Q;
 					current = current->next_page;
 					current->file_page = (char *) malloc ((*out)[0].size()+1);
 					strcpy(current->file_page,(*out)[0].c_str());
@@ -1679,22 +1814,25 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 				}
 			}
 			start = current;
+                        //Check if all the required blocks are present
 			for(int i=fromBlock;i<=toBlock;i++)
 			{
 				if(current!=NULL && current->block_id == i){
 					pre = current;
 					current = current->next_page;
+                                        StackFS_trace("Required block id:%d found in cache", i);
 				}
 				else
 				{
 					Leon *leonRead = new Leon();
 					int count = 0;		
 					char** args;
-					if(current->format == FASTQ_F)
+					if(fp->format == FASTQ_F)
 						args = prep_args(name, false, false, true,count);
 					else
 						args = prep_args(name, false, true, true,count);
 					leonRead->run(count, args);
+                                        StackFS_trace("Decompressing New block id:%d", i);
 					out = leonRead->executeDecompression(i);
 					delete leonRead;
 					struct file_pages* tmp = pre->next_page;
@@ -1703,6 +1841,10 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 					current->next_page->prev_page = current;
 					current->next_page->next_page = tmp;
 					current->next_page->format = current->format;
+                                        current->next_page->seq_size_A = current->seq_size_A;
+                                        current->next_page->seq_size_Q = current->seq_size_Q;
+                                        current->next_page->last_file_size_A = current->last_file_size_A;
+                                        current->next_page->last_file_size_Q = current->last_file_size_Q;
 					current = current->next_page;
 					current->file_page = (char *) malloc ((*out)[0].size()+1);
 					strcpy(current->file_page,(*out)[0].c_str());
@@ -1721,18 +1863,31 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			}
 			if(start!=NULL){
 				if(fromBlock == toBlock){
-					memcpy(buf, start->file_page+fromOff, toOff-fromOff);
+					if(fromOff < strlen(start->file_page)){
+ 						memcpy(buf, start->file_page+fromOff, toOff-fromOff);
+					}
 					res = toOff-fromOff;
 					//StackFS_trace("Data: %s", buf);
 				}else{
-					memcpy(buf, start->file_page+fromOff, strlen(start->file_page)-fromOff);
-					bufOff += strlen(start->file_page)-fromOff;
+                                        //Get Everything from the from block
+                                        if(block_sizes[fromBlock] <= strlen(start->file_page))
+                                        	memcpy(buf, start->file_page+fromOff, block_sizes[fromBlock]-fromOff);
+					else{
+						if(fromOff < strlen(start->file_page)){
+							 memcpy(buf, start->file_page+fromOff, 
+								strlen(start->file_page)-fromOff);
+						}
+					}
+					bufOff += block_sizes[fromBlock]-fromOff;
 					start = start->next_page;
+                                        // Get Everything in between from and to block.
 					for(int i=fromBlock+1;i<toBlock && start!=NULL; i++){
-						memcpy(buf+bufOff, start->file_page ,strlen(start->file_page)); 
-						bufOff+= strlen(start->file_page);
+ 						int copy_size = min(block_sizes[i], (int)strlen(start->file_page));
+						memcpy(buf+bufOff, start->file_page , copy_size); 
+						bufOff+= block_sizes[i];
 						start = start->next_page;
 					}
+                                        //Get Everything from the toBlock
 					if(start!=NULL){
 						if(size - bufOff < toOff){
 							toOff = size - bufOff;
@@ -1756,8 +1911,11 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 		if (res == -1)
 			return (void) fuse_reply_err(req, errno);
 		res = fuse_reply_buf(req, buf, res);
-		free(buf);
-		buf = NULL;
+                StackFS_trace("The buf size: %d, actual size: %d", strlen(buf), size);
+                if(buf!=NULL){
+			free(buf);
+			buf = NULL;
+		}
 	}
 	StackFS_trace("StackFS Read end on inode : %llu", get_lower_fuse_inode_no(req, ino));
 }
@@ -2361,11 +2519,11 @@ static int remove_entry(char* fullPath, bool isFastq){
 		qual_name = file_name + "_" + to_string(block_id) + ".qual";
 	}
 	int count = 0;
-	Leon *leonRemove = new Leon();
+	/*Leon *leonRemove = new Leon();
 	char** args = prep_args(fullPath, false, !isFastq, true,count);
 	leonRemove->run(count, args);
 	leonRemove->removeEntireFileConfig();;
-	delete leonRemove;
+	delete leonRemove;*/
 	if(g_hash_table_contains(file_table,fullPath)){
 		struct file_pages * fp = (struct file_pages*) g_hash_table_lookup(file_table, fullPath);
 		StackFS_trace("File found : %s removing %p", fullPath, fp);
@@ -2610,11 +2768,11 @@ static void stackfs_ll_rename(fuse_req_t req, fuse_ino_t parent, const char* fro
 			t_qual_name = t_file_name + "_" + to_string(block_id) + ".qual";
 		}
 		int count = 0;
-		Leon *leonRemove = new Leon();
+		/*Leon *leonRemove = new Leon();
 		char** args = prep_args(f_fullPath, false, !isFastq, true,count);
 		leonRemove->run(count, args);
 		leonRemove->renameConfig(to, t_fullPath);
-		delete leonRemove;
+		delete leonRemove;*/
 		if(g_hash_table_contains(file_table,f_fullPath)){
 			struct file_pages * fp = (struct file_pages*) 
 				g_hash_table_lookup(file_table, f_fullPath);
