@@ -40,6 +40,9 @@ using namespace std;
 FILE *logfile;
 #define ATTR "user.format"
 #define ORIG_ATTR "user.orig_format"
+#define FASTA_SIZE_ATTR "user.fasta_size"
+#define FASTQ_SIZE_ATTR "user.fastq_size"
+#define SIZE_LEN 15
 #define ATTR_SIZE 6
 #define FASTA "fasta"
 #define FASTQ "fastq"
@@ -131,6 +134,17 @@ int log_open(char *statsDir)
 	return 0;
 }
 
+string formatSize(int size){
+	string ret = to_string(size);
+	for(int i=ret.size();i<SIZE_LEN;i++){
+		ret = "0"+ret;
+	}
+	printf("formatted file size : %s\n", ret.c_str());
+	return ret;
+}
+
+
+//Not Used currently
 void splitCopy(int argc, char* argv[],const char* tmp_file, int block_id){
 	Leon *leon = new Leon();
 	leon->run (argc, argv);
@@ -749,84 +763,40 @@ static int getSeqSize(string s,string file_format){
         return seq_size;
 }
 
-static int getFileCount(char* filebase){
+static void getFileCount(char* filebase, vector<int>& block_sizes, bool isFasta){
 	string base(filebase);
         string filename;
         struct stat buffer;
 	int count = 0;
+	block_sizes.clear();
+	string attr_name;
+	if(isFasta)
+		attr_name = FASTA_SIZE_ATTR;
+	else
+		attr_name = FASTQ_SIZE_ATTR;
         filename = base+"_0"+EXT;
         while(stat(filename.c_str(), &buffer)==0){
+		char value[SIZE_LEN];
+        	int ret = lgetxattr(filename.c_str(), attr_name.c_str(), value, SIZE_LEN);
+		if(ret >0){
+			block_sizes.push_back(stoi(value));
+		}
+		StackFS_trace("Final file name : %s, count : %d",filename.c_str(), block_sizes[count]);
 		count++;
 		filename = base + "_" + to_string(count)+EXT;
 	}
-	StackFS_trace("Final file name : %s, count : %d",filename.c_str(), count);
-	return count-1;
-}
-
-static int getSeqCount(string s, string file_format){
-	int lineCount = 0;
-       	string line;
-        stringstream ss(s);
-        while(getline(ss, line)){
-		lineCount++;
-	}
-        if(file_format.find(FASTA)!=string::npos){
-                lineCount /= 2;
-        }else{
-                lineCount /= 4;
-        }
-	return lineCount;
 }
 
 static int get_file_size(char* fullPath, string val){
-	int file_count = getFileCount(fullPath);
-	int last_file_size = -1;
-        int ret = 0;
-	if(g_hash_table_contains(file_table, fullPath)){
-		struct file_pages* fp = (struct file_pages*)g_hash_table_lookup
-			(file_table, fullPath);
-		if(val.find(FASTA)!=string::npos){
-                        last_file_size = fp->last_file_size_A;
-                }else{
-                        last_file_size = fp->last_file_size_Q;
-                }
-	}
-	Leon* leon = new Leon();
-	if(last_file_size ==-1){
-		int count = 0;
-		char** args;
-		if(val.find(FASTA)!=string::npos){
-			args = prep_args(fullPath,false, true, true,count);
-		}else{
-			args = prep_args(fullPath,false, false, true,count);
-		}
-		leon->run(count, args);
-		vector<string>* out =leon->executeDecompression(file_count);
-		int seq_size = getSeqSize((*out)[0], val);
-		ret = (seq_size * leon->READ_PER_BLOCK * file_count) + (*out)[0].size();
-		if(g_hash_table_contains(file_table, fullPath)){
-			struct file_pages* fp = (struct file_pages*)g_hash_table_lookup
-				(file_table, fullPath);
-			if(val.find(FASTA)!=string::npos){
-				fp->last_file_size_A = (*out)[0].size();
-				fp->seq_size_A = seq_size;
-			}else{
-				fp->last_file_size_Q = (*out)[0].size();
-				fp->seq_size_Q = seq_size;
-			}
-		}
-		delete out;
-		delete leon;
+	int ret =0;
+	vector<int> block_sizes;
+	if(val.find(FASTA)!=string::npos){
+		getFileCount(fullPath, block_sizes, true); //is Fasta true
 	}else{
-		struct file_pages* fp = (struct file_pages*)g_hash_table_lookup (file_table, fullPath);
-		if(val.find(FASTA)!=string::npos){
-			ret = (fp->seq_size_A * leon->READ_PER_BLOCK * file_count) +
-					fp->last_file_size_A;
-		}else{
-			ret = (fp->seq_size_Q * leon->READ_PER_BLOCK * file_count) +
-                                        fp->last_file_size_Q;
-		}
+		getFileCount(fullPath, block_sizes, false); // is Fasta false
 	}
+	ret = accumulate(block_sizes.begin(), block_sizes.end(), 0);
+        StackFS_trace("Final file name : %s, size : %d",fullPath, ret);
 	return ret;
 }
 
@@ -960,7 +930,6 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 	attr_val = lo_attr_valid_time(req);
 	generate_start_time(req);
 	string filename (name);
-
 	char* fname = (char*) malloc(PATH_MAX);
         strcpy(fname, name);
         strcat(fname, "_0.leon");
@@ -1423,11 +1392,20 @@ static void splitFiles(int argc, char* argv[], int fast){
 		//leon->seq_per_block->push_back(j);
 		fout.close();
 		leon1->executeCompression(block_count, temp_file.c_str());
+		string fasta_value, fastq_value;
+		fasta_value = formatSize(fasta_size);
+		fastq_value = formatSize(size);
+                string filename = leon->_inputFilename+"_"+to_string(block_count)+".leon";
+                if(lsetxattr(filename.c_str(), FASTA_SIZE_ATTR, fasta_value.c_str(), SIZE_LEN, 0)==-1)
+                        StackFS_trace("Error in setxattr");
+		if(lsetxattr(filename.c_str(), FASTQ_SIZE_ATTR, fastq_value.c_str(), SIZE_LEN, 0)==-1)
+                        StackFS_trace("Error in setxattr");
 		block_count++;
 	}
 	//leon->saveConfig();
 }	
 
+//Not Used Currently
 static void compress_save(char * name){
 	char * point = NULL;
 	StackFS_trace("The file name to be saved: %s", name);
@@ -1729,35 +1707,17 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			vector<string>* out;
 			int fromOff = 0, toOff = 0, bufOff = 0;
 			int end_page = (offset+size)/PG_SIZE;
-                        int file_count = getFileCount(name);				
                         int seq_size = 0;
                         Leon* leonSeq = new Leon();
                         int count = 0;
 			int last_file_size = -1;
                         char** targs;
+			vector<int> block_sizes;
                         if(current->format == FASTA_F){
-                                targs = prep_args(name,false, true, true,count);
-				seq_size = fp->seq_size_A;
-				last_file_size = fp->last_file_size_A;
+				getFileCount(name, block_sizes, true);
                         }else{
-                                targs = prep_args(name,false, false, true,count);
-				seq_size = fp->seq_size_Q;
-				last_file_size = fp->last_file_size_Q;
+				getFileCount(name, block_sizes, false);
                         }
-			vector<int> block_sizes(file_count, seq_size*leon->READ_PER_BLOCK);
-			if(last_file_size <0){
-				leonSeq->run(count, targs);
-				vector<string>* test =leonSeq->executeDecompression(file_count);
-				if(fp->format ==FASTA_F){
-					fp->last_file_size_A = (*test)[0].size();
-				}else{
-					fp->last_file_size_Q = (*test)[0].size();
-				}
-				block_sizes.push_back((*test)[0].size());
-				delete test;
-				test = NULL;
-			}else
-				block_sizes.push_back(last_file_size);
 			int fromBlock = findBlockId(offset, fromOff, block_sizes);
 			int toBlock = findBlockId(offset+size, toOff, block_sizes);
 			if(fromBlock >= block_sizes.size()){
@@ -3039,11 +2999,13 @@ static void stackfs_ll_setxattr(fuse_req_t req, fuse_ino_t ino,
 					pthread_spin_unlock(&spinlock);
 				}		
 			}
-		}else if( strcmp(name, ORIG_ATTR)!=0){
+		}else if( strcmp(name, ORIG_ATTR)!=0 && strcmp(name, FASTA_SIZE_ATTR)!=0 
+							&& strcmp(name, FASTQ_SIZE_ATTR)!=0){
 			res = lsetxattr(fname, name, value, size, flags);
 		}
 	}else{
-		if(strcmp(name, ATTR)==0 || strcmp(name, ORIG_ATTR)==0){
+		if(strcmp(name, ATTR)==0 || strcmp(name, ORIG_ATTR)==0 
+			|| strcmp(name, FASTA_SIZE_ATTR)!=0 || strcmp(name, FASTQ_SIZE_ATTR)!=0 ){
 			errno = ENOTSUP;
 			res = -1;
 		}else 
