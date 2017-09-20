@@ -1928,8 +1928,21 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 		}
 		nextoff = telldir(d->dp);
 		string cur_file(d->entry->d_name);
+		string full_path(lo_name(req, ino));
+		full_path += "/";
+		full_path += cur_file;
 		size_t dot = cur_file.find_last_of('.');
-		if(dot != string::npos && cur_file.substr(dot).compare(EXT)==0){
+		char value[ATTR_SIZE];
+        	int ret = lgetxattr(full_path.c_str(), ATTR, value, ATTR_SIZE);
+        	string val(value);
+		if( cur_file.substr(dot).compare(".qual")==0){
+			string leonFile = full_path.substr(0, full_path.rfind("_"));
+			leonFile += "_0.leon";
+			ret = lgetxattr(leonFile.c_str(), ATTR, value, ATTR_SIZE);
+			if(ret >= 0)
+				val = string(value);
+		}	
+		if(dot != string::npos && cur_file.substr(dot).compare(EXT)==0 && val.find(LEON)==string::npos){
 			if(cur_file.find("_") !=  string::npos){
 				//cut the file name before the '_' in XXXX_12.leon or XXXX_0.leon
 				size_t under = cur_file.rfind("_");
@@ -1947,8 +1960,8 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 					file_list.insert(file_name);
 				}
 			}
-		}else if((dot == string::npos || cur_file.substr(dot).compare(".qual")!=0)
-				&& file_list.find(cur_file)==file_list.end()){
+		}else if((dot == string::npos || cur_file.substr(dot).compare(".qual")!=0 ||
+			 val.find(LEON)!=string::npos) && file_list.find(cur_file)==file_list.end()){
 			struct stat st = {};
 			st.st_ino = d->entry->d_ino;
 			st.st_mode = d->entry->d_type << 12;
@@ -2040,11 +2053,32 @@ static void stackfs_ll_release(fuse_req_t req, fuse_ino_t ino,
                                 StackFS_trace("Error in setxattr");
 			lsetxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
 		}
-		else if(created_files_map[name] == LEON_F){
-			strcpy(value, LEON);
-			if(lsetxattr(name, ATTR, value, ATTR_SIZE, 0)==-1)
-                                StackFS_trace("Error in setxattr");
-			lsetxattr(name, ORIG_ATTR, value, ATTR_SIZE-1, 0);
+		else if(created_files_map[name] == NONE_F){
+                        try{
+				StackFS_trace("File name %s is set to None", name);
+				Leon* leon = new Leon();
+				int format = 0;
+				int count = 0;
+				char** args;
+				args = prep_args(name,false, false, true,count);
+				leon->run(count, args);
+				if(leon->checkLeonFile(name, format)){
+					strcpy(value, LEON);
+					if(lsetxattr(name, ATTR, value, ATTR_SIZE-1, 0)==-1)
+						StackFS_trace("Error in setxattr");
+					if(format == FASTA_F)
+						strcpy(value, FASTA);
+					else
+						strcpy(value, FASTQ);
+					lsetxattr(name, ORIG_ATTR, value, ATTR_SIZE-1, 0);
+				}
+				delete leon;
+			}catch (...)  {
+        			StackFS_trace("Exception Thrown Not a leon file");
+    			}
+		}
+		if(value!=NULL){
+			free(value);
 		}
 		created_files_map.erase(name);
 	}
@@ -2154,251 +2188,6 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 	string val(value);
 	free(fname);
 	fname = NULL;
-	/*if(g_hash_table_contains(file_table,name)) {
-		struct file_pages* fp = (struct file_pages*)g_hash_table_lookup (file_table, name);
-		struct file_pages* current = fp;
-		struct file_pages* start = fp;
-		if(compressedType == 0){
-			int page_no = off/PG_SIZE;
-			int page_off = off%PG_SIZE;
-			int end_off = page_off+size;
-			int end_page = (off+size)/PG_SIZE;
-			StackFS_trace("The file name: %d %d", page_no, end_off);
-			while(current!=NULL && current->next_page!=NULL && page_no>0){
-				current = current->next_page;
-				start = start->next_page;
-				page_no--;
-				end_page--;
-			}
-			StackFS_trace("The page_no, end_page: %d %d", page_no, end_page);
-			if(current!=NULL && current->next_page == NULL && end_page >= 1){
-				char * point = NULL;
-				int fd = 0;
-				int bytes_read = PG_SIZE;
-				StackFS_trace("The file name: %s", name);
-				if((point = strrchr(name,'.')) != NULL) {
-					struct stat buffer;
-					int file_name_len = strlen(name)-strlen(point);
-					char * file_name = (char *) malloc(file_name_len+EXT_LEN+1);
-					strncpy(file_name, name, file_name_len);
-					strncpy(file_name+file_name_len, EXT, EXT_LEN);
-					file_name[file_name_len+EXT_LEN] = '\0';
-					StackFS_trace("Retrieving more data from file: %s", file_name);
-					if(stat(file_name, &buffer) == 0) {
-						fd = open(file_name, fi->flags);
-					}
-				}
-				while(bytes_read == PG_SIZE && end_page!=0){
-					current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
-					current->next_page->prev_page = current;
-					current->next_page->next_page = NULL;
-					//current->next_page->offset= current->offset;
-					current = current->next_page;
-					//bytes_read = pread(fd, current->file_page, PG_SIZE, current->offset);
-					int off = 0;
-					while(off<bytes_read){
-						current->file_page[off] +=1;
-						off++;
-					}
-					//current->offset+=bytes_read;
-					end_page--;
-				}
-				while(end_page!=0){
-					current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
-					current->next_page->prev_page = current;
-					current->next_page->next_page = NULL;
-					//current->next_page->offset= current->offset;
-					current = current->next_page;
-					end_page--;
-				}	
-				while(page_no>0){				
-					start = start->next_page;
-					page_no--;
-				}
-				current->next_page = NULL;
-				StackFS_trace("decompress data: %s %d", current->file_page, bytes_read);
-			}
-			StackFS_trace("The page_no, end_page: %d %d", page_no, end_page);
-			if(start!=NULL){
-				if(end_off<=PG_SIZE){
-					StackFS_trace("The page before insert: %s", start->file_page);
-					memcpy(start->file_page+page_off, buf, size);
-					StackFS_trace("The page after insert: %s", start->file_page);
-					start->dirty= 1;
-					res = size;
-				}else{
-					StackFS_trace("The page before insert: %s", start->file_page);
-					memcpy(start->file_page+page_off, buf, PG_SIZE-page_off);
-					end_off -= (PG_SIZE-page_off);
-					start = start->next_page;
-					int buf_off = PG_SIZE-page_off;
-					while(start!=NULL && end_off>=PG_SIZE){
-						memcpy(start->file_page, buf+buf_off ,PG_SIZE);
-						end_off -= PG_SIZE;
-						buf_off+= PG_SIZE;
-						start->dirty = 1;
-						start = start->next_page;
-					}
-					if(start!=NULL){
-						memcpy(start->file_page, buf+buf_off, end_off);
-						buf_off += end_off;
-						start->dirty = 1;
-						end_off = 0;
-					}
-					res = buf_off;
-				}
-				StackFS_trace("Written data: %s", start->file_page);
-			}
-		}
-		else if(compressedType == 1){
-			struct file_pages* end = fp;
-			struct file_pages* pre = fp;
-			Leon* leon = fp->leon;
-			bool block_found = false;
-			vector<string>* out;
-			int fromOff = 0, toOff = 0, bufOff = 0;
-			int end_page = (off+size)/PG_SIZE;
-			int fromBlock = leon->findBlockId(off, fromOff);
-			int toBlock = leon->findBlockId(off+size, toOff);
-			vector<int>* block_sizes = leon->getBlockSizes();
-			if(block_sizes!=NULL && fromBlock >= block_sizes->size()){
-				fromBlock = block_sizes->size()-1;
-				fromOff = (*block_sizes)[fromBlock]-1;
-			}
-			if(fromOff>(*block_sizes)[fromBlock] && fromBlock ==  block_sizes->size()-1){
-				fromOff = (*block_sizes)[fromBlock];
-			}
-			else if(fromOff>(*block_sizes)[fromBlock]){
-				fromOff = (*block_sizes)[fromBlock]-1;
-			}	
-			if(toBlock < block_sizes->size() && toOff>(*block_sizes)[toBlock]){
-				toOff = (*block_sizes)[toBlock]-1;
-			}
-			if(toBlock >= block_sizes->size()){
-				toBlock = block_sizes->size()-1;
-				toOff += (*block_sizes)[toBlock];
-				(*block_sizes)[toBlock] = toOff;
-				current->file_page = (char *)realloc(current->file_page, toOff+1);
-				appended = true;
-			}
-			while(current->block_id < fromBlock){
-				//pthread_spin_lock(&spinlock);
-				pre = current;
-				current = current->next_page;
-				if(current==NULL || current->block_id > fromBlock){
-					Leon *leonRead = new Leon();
-					int count = 0;
-					char** args = prep_args(name, false, false, true,count);
-					leonRead->run(count, args);
-					out = leonRead->executeDecompression(fromBlock);
-					delete leonRead;
-					//const char* ret = leonRead->executeDecompression(fromBlock);
-					struct file_pages* tmp = pre->next_page;
-					current = pre;
-					current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
-					current->next_page->prev_page = current;
-					current->next_page->next_page = tmp;
-					current = current->next_page;
-					//current->file_page = (char *) malloc (strlen(ret)+1);
-					//strcpy(current->file_page,ret);
-					current->file_page = (char *) malloc ((*out)[0].size()+1);
-					strcpy(current->file_page,(*out)[0].c_str());
-					current->s_off = current->prev_page->e_off+1;
-					current->e_off = current->s_off + (*out)[0].size();
-					current->size = (*out)[0].size();
-					//current->e_off = current->s_off + strlen(ret);
-					current->block_id = fromBlock;
-					current->leon = leon;
-					current->isFastq = fp->isFastq;
-					current->dirty = 0;
-					current->sequenceAdded = false;
-					delete out;
-				}
-				//pthread_spin_unlock(&spinlock);
-			}
-			start = current;
-			for(int i=fromBlock;i<=toBlock;i++){
-				//pthread_spin_lock(&spinlock);
-				if(current!=NULL && current->block_id == i){
-					pre = current;
-					current = current->next_page;
-				}else{
-					Leon *leonRead = new Leon();
-					int count = 0;
-					char** args = prep_args(name, false, false, true,count);
-					leonRead->run(count, args);
-					out = leonRead->executeDecompression(i);
-					delete leonRead;
-					//const char* ret = leonRead->executeDecompression(i);
-					struct file_pages* tmp = pre->next_page;
-					current = pre;
-					current->next_page = (struct file_pages*) malloc(sizeof(struct file_pages));
-					current->next_page->prev_page = current;
-					current->next_page->next_page = tmp;
-					current = current->next_page;
-					//current->file_page = (char *) malloc (strlen(ret)+1);
-					//strcpy(current->file_page,ret);
-					current->file_page = (char *) malloc ((*out)[0].size()+1);
-					strcpy(current->file_page,(*out)[0].c_str());
-					current->s_off = current->prev_page->e_off+1;
-					current->e_off = current->s_off + (*out)[0].size();
-					current->block_id = i;
-					current->leon = leon;
-					current->size = (*out)[0].size();
-					current->isFastq = fp->isFastq;
-					current->dirty = 0;
-					current->sequenceAdded = false;
-					pre = current;
-					current = current->next_page;
-					delete out;
-				}
-				//pthread_spin_unlock(&spinlock);
-			}
-			if(start!=NULL){
-				if(fromBlock == toBlock){
-					memcpy(start->file_page+fromOff, buf,toOff-fromOff);
-					if(appended)
-						start->file_page[toOff] = '\0';
-					res = toOff-fromOff;
-					start->dirty = 1;
-					//StackFS_trace("Data: %s", buf);
-				}else{
-					memcpy(start->file_page+fromOff, buf,strlen(start->file_page)-fromOff);
-					bufOff += strlen(start->file_page)-fromOff;
-					start->dirty = 1;
-					pre = start;
-					start = start->next_page;
-					for(int i=fromBlock+1;i<toBlock && start!=NULL; i++){
-						strcpy(start->file_page,buf+bufOff);
-						bufOff+= strlen(start->file_page);
-						start->dirty = 1;
-						pre = start;
-						start = start->next_page;
-					}
-					if(start!=NULL){
-						memcpy(start->file_page,buf+bufOff, toOff);
-						if(appended)
-							start->file_page[toOff] = '\0';
-						bufOff += toOff;
-						start->dirty = 1;
-					}
-					//StackFS_trace("Data: %s", buf);
-					res = bufOff;
-				}
-			}
-			if(appended){
-				int count = 0;
-				Leon *leonSave = new Leon();
-				char** args = prep_args(name, false, false, true,count);
-				leonSave->run(count, args); 
-				leonSave->setBlockId(toBlock);
-				leonSave->orig_block_size->push_back((*block_sizes)[toBlock]);
-				leonSave->saveConfig();
-				delete[] args;
-				delete leonSave;
-			}
-		}
-	}*/
 	unordered_map<string,int>::const_iterator got = created_files_map.find (name);
 	struct stat buffer;
 	// To use the write operation, the file has to be either a newly created one or not a special 
@@ -2409,8 +2198,8 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 				created_files_map[name] = FASTQ_F;
 			else if(detect_fasta(buf, size))
 				created_files_map[name] = FASTA_F;
-			else if(detect_leon(buf, size))
-				created_files_map[name] = LEON_F;
+			//else if(detect_leon(buf, size))
+			//	created_files_map[name] = LEON_F;
 			else
 				created_files_map[name] = NONE_F;
 			StackFS_trace("File detected to be : %d", created_files_map[name]);

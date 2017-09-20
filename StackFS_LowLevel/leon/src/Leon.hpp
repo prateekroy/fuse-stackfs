@@ -207,7 +207,7 @@ class Leon : public misc::impl::Tool
 		void readConfig(char* file, char* input);
 		//void update_block_sizes(vector<int>* block_sizes, char* name);	
 		int getFileSize(char* config_file, char* input);
-		int findBlockId(int off, int &blockOff);
+		bool checkLeonFile(char* file, int& format);
 		vector<int>* getBlockSizes();
 		void saveConfig();
 		void removeConfig(bool isFastq);

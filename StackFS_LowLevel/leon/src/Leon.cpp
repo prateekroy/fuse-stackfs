@@ -1518,15 +1518,16 @@ vector<string>* Leon::executeDecompression(int block_id){
 	
 	
 	string dir = System::file().getDirectory(_inputFilename);
-	
+	fprintf(stderr,"cannot open file %s\n",_inputFilename.c_str());
 	_descInputFile = new ifstream(_inputFilename.c_str(), ios::in|ios::binary);
 	_inputFile = new ifstream(_inputFilename.c_str(), ios::in|ios::binary);
 	
-	
+	fprintf(stderr,"cannot open file %s\n",_inputFilename.c_str());
 	if ( (_inputFile->rdstate() & std::ifstream::failbit ) != 0 )
 	{
 		fprintf(stderr,"cannot open file %s\n",_inputFilename.c_str());
-		exit( EXIT_FAILURE);
+		//exit( EXIT_FAILURE);
+		throw 0;
 	}
 	
 	//remove .leon at the end :
@@ -1596,26 +1597,67 @@ vector<string>* Leon::executeDecompression(int block_id){
 	return ret;
 }
 
-int Leon::findBlockId(int off, int &blockOff){
-	int seqNo = 0;
-	int blockId = 0;
-	blockOff = 0;
-	if(_isFasta){
-		while(seqNo < orig_block_size->size() && off> (*orig_block_size)[seqNo]){
-			off -= (*orig_block_size)[seqNo];
-			seqNo++;
-			blockId++;
-		}
-	}else{
-		while(seqNo < fastq_block_size->size() && off> (*fastq_block_size)[seqNo]){
-                        off -= (*fastq_block_size)[seqNo];
-                        seqNo++;
-                        blockId++;
-                }
-	}
-	blockOff = off;
-	cout<<endl<<"block Id: "<<blockId<<" block Off: "<<blockOff<<endl;
-	return blockId;
+bool Leon::checkLeonFile(char* file, int& format){
+	 _filePos = 0;
+
+	string file_name(file);	
+        cout << "\tInput filename: " << file_name << endl;
+
+
+        string dir = System::file().getDirectory(file_name);
+        _descInputFile = new ifstream(file_name.c_str(), ios::in|ios::binary);
+        _inputFile = new ifstream(file_name.c_str(), ios::in|ios::binary);
+
+        if ( (_inputFile->rdstate() & std::ifstream::failbit ) != 0 )
+        {
+                fprintf(stderr,"cannot open file %s\n",file_name.c_str());
+                return false;
+        }
+
+        _descInputFile->seekg(0, _descInputFile->end);
+        _rangeDecoder.setInputFile(_descInputFile, true);
+
+	 u_int8_t infoByte = _rangeDecoder.nextByte(_generalModel);
+	_noHeader = ((infoByte & 0x02) == 0x02);
+
+        if(! _isFasta)
+        {
+                _FileQualname =   _base_outputFilename +"_0.qual";
+                _inputFileQual = new ifstream(_FileQualname.c_str(), ios::in|ios::binary);
+                cout << "\tQual filename: " << _FileQualname << endl;
+        }
+
+
+        if(_noHeader)
+        {
+                cout << "Headers were not stored, will number reads \n" << endl;
+        }
+
+        if(_isFasta){
+                cout << "\tOutput format: Fasta" << endl;
+                _outputFilename += ".fasta.d";
+		format = 2;
+        }
+        else{
+                cout << "\tOutput format: Fastq" << endl;
+                _outputFilename += ".fastq.d";
+		format = 1;
+        }
+	 _kmerSize = CompressionUtils::decodeNumeric(_rangeDecoder, _numericModel);
+        cout << "\tKmer size: " << _kmerSize << endl;
+        cout << endl;
+
+        //get version
+        size_t version_major = CompressionUtils::decodeNumeric(_rangeDecoder, _numericModel);
+        size_t version_minor = CompressionUtils::decodeNumeric(_rangeDecoder, _numericModel);
+        size_t version_patch = CompressionUtils::decodeNumeric(_rangeDecoder, _numericModel);
+
+
+        cout << "\tInput File was compressed with leon version " << version_major << "."  << version_minor << "."  << version_patch  << endl;
+
+	if(version_major !=1 || version_minor !=0 || version_patch!=0)
+		return false;
+	return true;
 }
 
 vector<string>* Leon::startDecompressionAllStreams(int s_block){
