@@ -313,7 +313,7 @@ int print_banner(void)
 	unsigned long tid;
 
 	banner[0] = '\0';
-	time = print_timer();
+	time = print_timer()/1000;
 	pid = getpid();
 	tid = syscall(SYS_gettid);
 	if (time == 0)
@@ -781,22 +781,24 @@ static void getFileCount(char* filebase, vector<int>& block_sizes, bool isFasta)
 		if(ret >0){
 			block_sizes.push_back(stoi(value));
 		}
-		StackFS_trace("Final file name : %s, count : %d",filename.c_str(), block_sizes[count]);
+		//StackFS_trace("Final file name : %s, count : %d",filename.c_str(), block_sizes[count]);
 		count++;
 		filename = base + "_" + to_string(count)+EXT;
 	}
 }
 
-static int get_file_size(char* fullPath, string val){
-	int ret =0;
+static long get_file_size(char* fullPath, string val){
+	long ret =0l;
 	vector<int> block_sizes;
 	if(val.find(FASTA)!=string::npos){
 		getFileCount(fullPath, block_sizes, true); //is Fasta true
 	}else{
 		getFileCount(fullPath, block_sizes, false); // is Fasta false
 	}
-	ret = accumulate(block_sizes.begin(), block_sizes.end(), 0);
-        StackFS_trace("Final file name : %s, size : %d",fullPath, ret);
+	for(int i=0;i<block_sizes.size();i++){
+		ret += (long)block_sizes[i];
+	}
+        //StackFS_trace("Final file name : %s, size : %d",fullPath, ret);
 	return ret;
 }
 
@@ -1269,16 +1271,6 @@ static void decompress_store(char * name, int fd, int format){
 		current->dirty = 0;
 		current->size = (*out)[0].size();
 		current->sequenceAdded = false;
-		//current->isFastq = isFastq;
-		/*char * config = createFile(name, CONFIG);
-		string input(name);
-		size_t file_base = input.find_last_of('/')+1;
-		input = input.substr(file_base);
-		char* test = strdup(input.c_str());
-		leon->readConfig(config, test);
-		free(config);
-		free(test);*/
-		StackFS_trace("decompress data: %s", current->file_page);	
 		pthread_spin_lock(&spinlock);
 		delete out;
 		g_hash_table_insert(file_table, key, fp);
@@ -1479,7 +1471,6 @@ static void safe_remove(char* name){
 		struct file_pages * fp = (struct file_pages*) g_hash_table_lookup(file_table, key);
 		StackFS_trace("File found : %s removing %p", key, fp);
 		struct file_pages * current = fp;
-		//compress_save(key);
 		while(current!=NULL && current->next_page!=NULL){
 			current = current->next_page;
 		}
@@ -1643,17 +1634,16 @@ static void stackfs_ll_opendir(fuse_req_t req, fuse_ino_t ino,
 	fuse_reply_open(req, fi);
 }
 
-static int findBlockId(int off, int &blockOff, vector<int> block_size){
-        int seqNo = 0;
+static int findBlockId(unsigned long off, int &blockOff, vector<int> block_size){
         int blockId = 0;
 	blockOff = 0;
-	while(seqNo < block_size.size() && off> block_size[seqNo]){
-		off -= block_size[seqNo];
-		seqNo++;
+	cout<<"Offset: "<<off<<endl;
+	while(blockId < block_size.size() && off> block_size[blockId]){
+		off -= block_size[blockId];
 		blockId++;
 	}
 	blockOff = off;
-	cout<<endl<<"block Id: "<<blockId<<" block Off: "<<blockOff<<endl;
+	cout<<"block Id: "<<blockId<<" block Off: "<<blockOff<<endl;
 	return blockId;
 }
 
@@ -1661,12 +1651,12 @@ static int findBlockId(int off, int &blockOff, vector<int> block_size){
 static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 		off_t offset, struct fuse_file_info *fi)
 {
-	int res;
+	int res=0;
 	(void) ino;
 	//struct timespec start, end;
 	//long time;
 	//long time_sec;
-
+	//unsigned long off_set= offset;
 	StackFS_trace("StackFS Read start on inode : %llu", get_lower_fuse_inode_no(req, ino));
 	if (USE_SPLICE) {
 		struct fuse_bufvec buf = FUSE_BUFVEC_INIT(size);
@@ -1701,12 +1691,8 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			struct file_pages* pre = fp;
 			Leon* leon = fp->leon;
 			bool block_found = false;
-			int page_no = offset/PG_SIZE;
-			int page_off = offset%PG_SIZE;
-			int end_off = page_off+size;
 			vector<string>* out;
 			int fromOff = 0, toOff = 0, bufOff = 0;
-			int end_page = (offset+size)/PG_SIZE;
                         int seq_size = 0;
                         Leon* leonSeq = new Leon();
                         int count = 0;
@@ -1718,8 +1704,12 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
                         }else{
 				getFileCount(name, block_sizes, false);
                         }
+			cout<<"off_t: "<<offset<<endl;
 			int fromBlock = findBlockId(offset, fromOff, block_sizes);
 			int toBlock = findBlockId(offset+size, toOff, block_sizes);
+			cout<<endl;
+			StackFS_trace("The from block: %d to block %d", fromBlock, toBlock);
+                        StackFS_trace("The fromOff: %d toOff %d", fromOff, toOff);
 			if(fromBlock >= block_sizes.size()){
 				fromBlock = block_sizes.size()-1;
 				fromOff = block_sizes[fromBlock]-1;
@@ -1870,8 +1860,8 @@ static void stackfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 		populate_time(req);
 		if (res == -1)
 			return (void) fuse_reply_err(req, errno);
+		StackFS_trace("The buf size: %d, actual size: %d response:%d", strlen(buf), size, res);
 		res = fuse_reply_buf(req, buf, res);
-                StackFS_trace("The buf size: %d, actual size: %d", strlen(buf), size);
                 if(buf!=NULL){
 			free(buf);
 			buf = NULL;
@@ -2019,6 +2009,7 @@ static void create_file(char* name){
                 newName += ".fasta";
 		unlink(newName.c_str());
 	}
+	StackFS_trace("File created and compressed on name : %s ", name);
 }
 
 static void stackfs_ll_release(fuse_req_t req, fuse_ino_t ino,
@@ -2174,8 +2165,6 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 {
 	int res;
 	(void) ino;
-	StackFS_trace("Write name : %s, inode : %llu, off : %lu, size : %zu",
-			lo_name(req, ino), lo_inode(req, ino)->ino, off, size);
 	generate_start_time(req);
 	char * name = lo_name(req, ino);
 	int compressedType = 2;
@@ -2669,7 +2658,7 @@ static void stackfs_ll_getxattr(fuse_req_t req, fuse_ino_t ino,
 	int res;
 	struct stat buf;
 	char* fullPath = lo_name(req, ino);
-	StackFS_trace("Function Trace : Getxattr %s", fullPath);
+	//StackFS_trace("Function Trace : Getxattr %s", fullPath);
 	if (size) {
 		char *value = (char *) malloc(size);
 		generate_start_time(req);
@@ -3067,9 +3056,9 @@ int main(int argc, char **argv)
 					if (resolved_statsDir)
 						fuse_session_add_statsDir(se,
 								resolved_statsDir);
-					if (multithreaded)
-						err = fuse_session_loop_mt(se);
-					else
+					//if (multithreaded)
+					//	err = fuse_session_loop_mt(se);
+					//else
 						err = fuse_session_loop(se);
 					(void) err;
 

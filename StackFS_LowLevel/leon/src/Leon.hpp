@@ -204,17 +204,7 @@ class Leon : public misc::impl::Tool
 		}
 		void executeCompression(int block_id,const char* data);
 		vector<string>* executeDecompression(int s_block); //pass starting and ending block number
-		void readConfig(char* file, char* input);
-		//void update_block_sizes(vector<int>* block_sizes, char* name);	
-		int getFileSize(char* config_file, char* input);
 		bool checkLeonFile(char* file, int& format);
-		vector<int>* getBlockSizes();
-		void saveConfig();
-		void removeConfig(bool isFastq);
-		void removeInvalidChar(string orig, string& valid);
-		void renameConfig(const char* toName, char* t_full);
-		void removeEntireFileConfig();
-		void setBlockId(int block);
 	private:
 
 		u_int64_t _lastAnchorValue;
