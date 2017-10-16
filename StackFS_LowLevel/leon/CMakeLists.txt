@@ -80,8 +80,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 include_directories (${PROGRAM_SOURCE_DIR})
 file (GLOB_RECURSE  ProjectFiles  ${PROGRAM_SOURCE_DIR}/*.cpp)
 add_executable(${PROJECT_NAME} ${ProjectFiles})
+<<<<<<< HEAD
 SET (LIBFUSE_LIB  /usr/local/lib/libfuse3.so)
 target_link_libraries(${PROJECT_NAME} ${LIBFUSE_LIB} ${gatb-core-libraries} ${GLIB2_LIBRARIES})
+=======
+target_link_libraries(${PROJECT_NAME} ${gatb-core-libraries} ${FUSE_LIBRARIES} ${GLIB2_LIBRARIES})
+>>>>>>> 88432777b0dd31fa28e88314a24e535fed24f9c5
 
 
 ################################################################################
