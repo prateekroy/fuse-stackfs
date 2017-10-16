@@ -77,7 +77,7 @@ TODO
 #define CONFIG ".biofs.dirinfo"
 
 using namespace std;
-using namespace libconfig;
+// using namespace libconfig;
 
 //#define SERIAL //this macro is also define in the execute() method
 //#define PRINT_DEBUG
@@ -94,7 +94,6 @@ const char* Leon::STR_NOHEADER = "-noheader";
 const char* Leon::STR_NOQUAL = "-noqual";
 const char* Leon::STR_COMPRESS_ENTIRE = "-e";
 const char* Leon::STR_COMPRESS_BLOCK = "-b";
-int block_id_to_compress = 0;
 
 const int Leon::nt2binTab[128] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
@@ -222,10 +221,8 @@ void Leon::execute()
 	_isFasta = true;
 	_nb_cores = getInput()->getInt(STR_NB_CORES);
 	_inputFilename = getInput()->getStr (STR_URI_FILE);
-	_real_inputFilename = _inputFilename;
         if(! getParser()->saw (Leon::STR_NOQUAL)){
         	_isFasta = false;
-		cout<<"No Qual";
 	}
 	_base_outputFilename = _inputFilename;
 	_numericModel.clear();
@@ -313,17 +310,16 @@ void Leon::createBloom (){
 }
 
 
-void Leon::executeCompression(int block_id,const char* file_name){
-        #ifdef PRINT_DEBUG
-                cout << "Start compression" << endl;
-        #endif
+void Leon::executeCompression(string fast_name){
+#ifdef PRINT_DEBUG
+	cout << "Start compression" << endl;
+#endif
 
-    _kmerSize      = getInput()->getInt (STR_KMER_SIZE);
-    _nks      = getInput()->get(STR_KMER_ABUNDANCE) ? getInput()->getInt(STR_KMER_ABUNDANCE) : 3;
-        //_nks           = getInput()->getInt (STR_KMER_ABUNDANCE);
-	_inputFilename.assign(file_name);
-	block_id_to_compress = block_id;
-        #ifdef PRINT_DEBUG
+	_inputFilename.assign(fast_name);
+	_kmerSize      = getInput()->getInt (STR_KMER_SIZE);
+	_nks      = getInput()->get(STR_KMER_ABUNDANCE) ? getInput()->getInt(STR_KMER_ABUNDANCE) : 3;
+	//_nks           = getInput()->getInt (STR_KMER_ABUNDANCE);
+#ifdef PRINT_DEBUG
                 cout << "\tInput filename: " << _inputFilename << endl;
         #endif
 
@@ -334,8 +330,6 @@ void Leon::executeCompression(int block_id,const char* file_name){
         int lastindex = _inputFilename.find_last_of (".");
 
         _noHeader =false;
-
-
         if(getParser()->saw (Leon::STR_NOHEADER))
         {
                 _noHeader = true;
@@ -407,11 +401,11 @@ void Leon::executeCompression(int block_id,const char* file_name){
     string dir = System::file().getDirectory(_inputFilename);
     string prefix = System::file().getBaseName(_inputFilename);
     //_outputFilename = dir + "/" + System::file().getBaseName(prefix) + ".leon";
-	_outputFilename = _base_outputFilename+"_"+to_string(block_id)+".leon";
+	_outputFilename = _base_outputFilename+".leon";
 	_outputFile = System::file().newFile(_outputFilename, "wb");
         if(! _isFasta)
         {
-                _FileQualname = _base_outputFilename+"_"+to_string(block_id)+ ".qual";
+                _FileQualname = _base_outputFilename+".qual";
                 _FileQual = System::file().newFile(_FileQualname, "wb");
                 _qualwriter = new OrderedBlocks( _FileQual , _nb_cores ) ;
         }
@@ -1068,7 +1062,7 @@ vector<string>* Leon::executeDecompression(int block_id){
 	
 	_filePos = 0;
 	
-	_inputFilename = _base_outputFilename+"_"+to_string(block_id)+".leon";
+	_inputFilename = _base_outputFilename+".leon";
 	cout << "\tInput filename: " << _inputFilename << endl;
 	
 	
@@ -1110,7 +1104,7 @@ vector<string>* Leon::executeDecompression(int block_id){
 	if(! _isFasta)
 	{
 		
-		_FileQualname =   _base_outputFilename +"_"+to_string(block_id) + ".qual";
+		_FileQualname =   _base_outputFilename +".qual";
 		_inputFileQual = new ifstream(_FileQualname.c_str(), ios::in|ios::binary);
 		cout << "\tQual filename: " << _FileQualname << endl;
 	}
@@ -1175,7 +1169,7 @@ bool Leon::checkLeonFile(char* file, int& format){
 
         if(! _isFasta)
         {
-                _FileQualname =   _base_outputFilename +"_0.qual";
+                _FileQualname =   _base_outputFilename +".qual";
                 _inputFileQual = new ifstream(_FileQualname.c_str(), ios::in|ios::binary);
                 cout << "\tQual filename: " << _FileQualname << endl;
         }
@@ -1217,7 +1211,7 @@ vector<string>* Leon::startDecompressionAllStreams(int s_block){
 	
 	_filePosHeader = 0;
 	_filePosDna = 0;
-	
+	_nb_cores = 1;
 	if(! _noHeader)
 	{
 		
@@ -1305,10 +1299,29 @@ vector<string>* Leon::startDecompressionAllStreams(int s_block){
 	}
 	pthread_t * tab_threads = new pthread_t [_nb_cores];
 	thread_arg_decoder *  targ = new thread_arg_decoder [_nb_cores];
-	int i = 0;
+	int i = (s_block * 2);
+	for(int start = 0;start<i;start+=2){
+		u_int64_t blockSize;
+                int sequenceCount;
+		if(! _noHeader)
+		{
+			blockSize = _headerBlockSizes[start];
+			sequenceCount = _headerBlockSizes[start+1];
+			_filePosHeader += blockSize;
+		}
+		blockSize = _dnaBlockSizes[start];
+		sequenceCount = _dnaBlockSizes[start+1];
+		_filePosDna += blockSize;
+		if(! _isFasta)
+		{
+			blockSize = _qualBlockSizes[start];
+			sequenceCount = _qualBlockSizes[start+1];
+			_filePosQual += blockSize;
+		}	
+	}
 	int livingThreadCount = 0;
 	vector<string> * out = new vector<string>();
-	while(i < _dnaBlockSizes.size()){
+	if(i < _dnaBlockSizes.size()){
 		
 		for(int j=0; j<_nb_cores; j++){
 			
@@ -1465,11 +1478,7 @@ vector<string>* Leon::startDecompressionAllStreams(int s_block){
 		
 		livingThreadCount = 0;
 	}
-	
-	
-	
 	//_outputFile->flush();
-
 	for(int i=0; i<dnadecoders.size(); i++){
 		delete dnadecoders[i];
 	}
@@ -1484,9 +1493,6 @@ vector<string>* Leon::startDecompressionAllStreams(int s_block){
 		delete qualdecoders[i];
 	}
 	qualdecoders.clear();
-	
-	
-	
 	delete [] tab_threads;
 	delete [] targ;
 	cout << endl;

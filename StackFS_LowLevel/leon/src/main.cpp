@@ -27,6 +27,10 @@
 #include <Leon.hpp>
 #include <unordered_set>
 
+#include <mutex>
+#include <ThreadPool.h>
+
+std::mutex m;//you can use std::lock_guard if you want to be exception safe
 using namespace std;
 #define EXT_LEN 5
 #define THRESHOLD 21529800
@@ -40,9 +44,10 @@ using namespace std;
 FILE *logfile;
 #define ATTR "user.format"
 #define ORIG_ATTR "user.orig_format"
-#define FASTA_SIZE_ATTR "user.fasta_size"
-#define FASTQ_SIZE_ATTR "user.fastq_size"
-#define SIZE_LEN 15
+#define BLOCK_COUNT "user.block_count"
+#define FASTA_SIZE_ATTR "user.a"
+#define FASTQ_SIZE_ATTR "user.q"
+#define SIZE_LEN 5
 #define ATTR_SIZE 6
 #define FASTA "fasta"
 #define FASTQ "fastq"
@@ -55,6 +60,9 @@ FILE *logfile;
 #define PG_SIZE 4096
 #define TRACE_FILE "/trace_stackfs.log"
 #define TRACE_FILE_LEN 18
+#define THREADS_NUM 2
+
+thread_pool *myPool;
 
 pthread_spinlock_t spinlock; /* Protecting the above spin lock */
 char banner[4096];
@@ -62,6 +70,7 @@ GHashTable* file_table;
 GHashTable* file_cache;
 unordered_map<string , unordered_set<string>> directory_list_map;
 unordered_map<string, int> created_files_map; // new files and format
+string encoded_string = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 struct file_node{
 	char file_name[PATH_MAX];
 	Leon *leon;
@@ -134,8 +143,25 @@ int log_open(char *statsDir)
 	return 0;
 }
 
+static string tobase62(int size){
+        string ret = "";
+        while(size > 0){
+                ret.insert(0, 1, encoded_string[size%62]);
+                size /=62;
+        }
+        return ret;
+}
+
+static int tobase10(string base62){
+        int ret = 0;
+        for(int j =0;j<SIZE_LEN;j++){
+                ret = ret*62 + encoded_string.find(base62[j]);
+        }
+        return ret;
+}
+
 string formatSize(int size){
-	string ret = to_string(size);
+	string ret = tobase62(size);
 	for(int i=ret.size();i<SIZE_LEN;i++){
 		ret = "0"+ret;
 	}
@@ -227,7 +253,7 @@ void splitCopy(int argc, char* argv[],const char* tmp_file, int block_id){
 		//leon->orig_block_size->push_back(size);
 		//leon->seq_per_block->push_back(j);
 		fout.close();
-		leon1->executeCompression(block_count, temp_file.c_str());
+		//leon1->executeCompression(block_count, temp_file.c_str());
 		block_count++;
 		delete leon1;
 	}
@@ -764,26 +790,38 @@ static int getSeqSize(string s,string file_format){
 }
 
 static void getFileCount(char* filebase, vector<int>& block_sizes, bool isFasta){
-	string base(filebase);
-        string filename;
+	string base;
+        string filename(filebase);
         struct stat buffer;
-	int count = 0;
+	int count = 0, block_count = 0;
 	block_sizes.clear();
-	string attr_name;
-	if(isFasta)
-		attr_name = FASTA_SIZE_ATTR;
-	else
-		attr_name = FASTQ_SIZE_ATTR;
-        filename = base+"_0"+EXT;
-        while(stat(filename.c_str(), &buffer)==0){
+	char block[SIZE_LEN];
+	int ret = lgetxattr(filename.c_str(), BLOCK_COUNT, block, SIZE_LEN);
+	string base62;
+	filename += EXT;
+	if(ret > 0){
+		base62.assign(block);
+		block_count = tobase10(base62);
+	}
+	if(isFasta){
+		base = FASTA_SIZE_ATTR;
+	}else{
+		base = FASTQ_SIZE_ATTR;
+	}
+	string attr_name(base);
+	attr_name += "_";
+	attr_name += to_string(count);
+	StackFS_trace("Count file name : %s, attribute : %s",filename.c_str(), attr_name.c_str());
+        while(count< block_count){
 		char value[SIZE_LEN];
-        	int ret = lgetxattr(filename.c_str(), attr_name.c_str(), value, SIZE_LEN);
+        	ret = lgetxattr(filename.c_str(), attr_name.c_str(), value, SIZE_LEN);
+		string base62(value);
 		if(ret >0){
-			block_sizes.push_back(stoi(value));
+			block_sizes.push_back(tobase10(base62));
 		}
-		//StackFS_trace("Final file name : %s, count : %d",filename.c_str(), block_sizes[count]);
+		StackFS_trace("Final file name : %d, count : %d",count, block_sizes[count]);
 		count++;
-		filename = base + "_" + to_string(count)+EXT;
+		attr_name = base+ "_"+to_string(count);
 	}
 }
 
@@ -798,7 +836,7 @@ static long get_file_size(char* fullPath, string val){
 	for(int i=0;i<block_sizes.size();i++){
 		ret += (long)block_sizes[i];
 	}
-        //StackFS_trace("Final file name : %s, size : %d",fullPath, ret);
+        StackFS_trace("Final file name : %s, size : %d",fullPath, ret);
 	return ret;
 }
 
@@ -827,7 +865,7 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 	string filename(fullPath);
 	char* fname = (char*) malloc(PATH_MAX);
 	strcpy(fname, fullPath);
-	strcat(fname, "_0.leon");
+	strcat(fname, ".leon");
 	char value[ATTR_SIZE];
 	int ret = lgetxattr(fname, ATTR, value, ATTR_SIZE);
 	string val(value);
@@ -840,7 +878,6 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 		int len = strlen(fullPath)+EXT_LEN + 3;
 		file_name = (char*) malloc(PATH_MAX);
 		strcpy(file_name, fullPath);
-		strcat(file_name, "_0");
 		strcat(file_name, EXT);
 		file_name[len-1] = '\0';
 		if(stat(file_name, &buffer) == 0) {
@@ -853,12 +890,8 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
                 struct stat buffer;
                 bool isFastq = false;
                 file_name = (char*) malloc(PATH_MAX);
-                /*string base_name(filename.substr(0, filename.size()-5));
-                string fastq_name(base_name);
-                fastq_name += ".fastq";
-		time_t last;*/
-                string real_name = filename + "_0.leon";
-		string qual_name = filename + "_0.qual";
+                string real_name = filename + ".leon";
+		string qual_name = filename + ".qual";
                 if(stat(real_name.c_str(),&buffer) == 0){
                         int len = strlen(name) + 8;
                         isFastq = true;
@@ -868,18 +901,6 @@ static void stackfs_ll_lookup(fuse_req_t req, fuse_ino_t parent,
 			if(stat(qual_name.c_str(),&buffer) == 0){
 				e.attr.st_size += buffer.st_size;
 			}
-                        real_name = filename + "_1.leon";
-			qual_name = filename + "_1.qual";
-                        int block_no = 1;
-                        while(stat(real_name.c_str(),&buffer) == 0){
-                               	e.attr.st_size += buffer.st_size;
-                                block_no++;
-                                real_name = filename + "_" +to_string(block_no)+ "./leon";
-				qual_name = filename + "_" +to_string(block_no)+ "./qual";
-				if(stat(qual_name.c_str(),&buffer) == 0){
-                                	e.attr.st_size += buffer.st_size;
-				}
-                        }
                 }
 	}else{
 		res = stat(fullPath, &e.attr);
@@ -934,7 +955,7 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 	string filename (name);
 	char* fname = (char*) malloc(PATH_MAX);
         strcpy(fname, name);
-        strcat(fname, "_0.leon");
+        strcat(fname, ".leon");
 	char value[ATTR_SIZE];
         int ret = lgetxattr(fname, ATTR, value, ATTR_SIZE);
 	string val(value);
@@ -945,7 +966,6 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
 		int len = strlen(name)+EXT_LEN + 3;
 		file_name = (char*) malloc(PATH_MAX);
 		strcpy(file_name, name);
-		strcat(file_name, "_0");
 		strcat(file_name, EXT);
 		file_name[len-1] = '\0';
 		if(stat(file_name, &buffer) == 0) {
@@ -958,12 +978,8 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
                 struct stat buffer;
                 bool isFastq = false;
                 file_name = (char*) malloc(PATH_MAX);
-                /*string base_name(filename.substr(0, filename.size()-5));
-                string fastq_name(base_name);
-                fastq_name += ".fastq";
-		time_t last;*/
-                string real_name = filename + "_0.leon";
-                string qual_name = filename + "_0.qual";
+                string real_name = filename + ".leon";
+                string qual_name = filename + ".qual";
                 if(stat(real_name.c_str(),&buffer) == 0){
                         int len = strlen(name) + 8;
                         isFastq = true;
@@ -973,18 +989,6 @@ static void stackfs_ll_getattr(fuse_req_t req, fuse_ino_t ino,
                         if(stat(qual_name.c_str(),&buffer) == 0){
                                 buf.st_size += buffer.st_size;
 			}
-                        real_name = filename + "_1.leon";
-                        qual_name = filename + "_1.qual";
-                        int block_no = 1;
-                        while(stat(real_name.c_str(),&buffer) == 0){
-                                buf.st_size += buffer.st_size;
-                                block_no++;
-                                real_name = filename + "_" +to_string(block_no)+ "./leon";
-                                qual_name = filename + "_" +to_string(block_no)+ "./qual";
-                                if(stat(qual_name.c_str(),&buffer) == 0){
-                                        buf.st_size += buffer.st_size;
-				}
-                        }
                 }
 	}else{
 		res = stat(name, &buf);
@@ -1300,15 +1304,12 @@ static void splitFiles(int argc, char* argv[], int fast){
 	string dir = System::file().getDirectory(leon->_inputFilename);
 	int block_count = 0;
 	bool isFasta = true, noHeader = false;
-	string temp_file(".tmp_file_compress");
 	string fast_name = leon->_inputFilename;
         if(fast == FASTQ_F)
                 isFasta = false;
         if(isFasta){
-                temp_file += ".fasta";
 		fast_name += ".fasta";
         }else{
-                temp_file += ".fastq";
 		fast_name += ".fastq";
 	}
 	rename(leon->_inputFilename.c_str(), fast_name.c_str());
@@ -1316,27 +1317,19 @@ static void splitFiles(int argc, char* argv[], int fast){
 	int64_t seqCount = whole_bank->estimateNbItems();
 	if(leon->getParser()->saw (Leon::STR_NOHEADER))
 		noHeader = true;
-	temp_file = dir+"/"+temp_file;
 	Iterator<Sequence>* itSeq = leon->createIterator<Sequence> (whole_bank->iterator(),seqCount,
 			"Creating Temp Files"
 			);
 	string line;
-	//leon->orig_block_size->clear();
-	//leon->fastq_block_size->clear();
-	//leon->seq_per_block->clear();
 	bool more_lines = true;
 	bool first_time = true;
 	itSeq->first();
+	leon->executeCompression(fast_name);
+	string filename = leon->_base_outputFilename;
+        filename += EXT;
 	while(! itSeq->isDone()){
-		Leon *leon1  = new Leon();
-		leon1->run (argc, argv);
-		ofstream fout;
 		int j = 0, size = 0, readid = 0, fasta_size = 0;
 		bool  reading = true;
-		fout.open(temp_file.c_str());   //create a new file for each block
-		if (!fout.good()){
-			cerr << "I/O error while reading file." << endl;
-		}
 		while(! itSeq->isDone() && j < leon->READ_PER_BLOCK)
 		{
 			stringstream sint;
@@ -1344,57 +1337,44 @@ static void splitFiles(int argc, char* argv[], int fast){
 			if(!noHeader)
 			{
 				string line = itSeq->item().getComment();
-				if(isFasta)
-					fout<<">";
-				else
-					fout<<"@";
-				fout<<line<<'\n';
 				size += 1+line.size()+1;
 				fasta_size += 1+line.size()+1;
 			}
 			else
 			{
-				if(isFasta)
-					fout<< "> "<<sint.str()<<'\n';
-				else
-					fout<< "@ "<<sint.str()<<'\n';
 				readid++;
 				size+= 2+sint.str().size()+1;
 				fasta_size += 2+sint.str().size()+1;
 			}
 			int dna_len = itSeq->item().getDataSize();
-			char dna[dna_len+1];
-			strncpy(dna, itSeq->item().getDataBuffer(), dna_len);
-			dna[dna_len] = '\0';
-			fout<<dna<<'\n';
 			size+= dna_len+1;
 			fasta_size += dna_len + 1;
 			if( !isFasta)
 			{
 				string line = itSeq->item().getQuality();
-				fout<<"+\n";
-				fout<<line<<'\n';
 				size+= 2+line.size()+1;
 			}
 			j++;
 			itSeq->next();
 		}
-		//leon->fastq_block_size->push_back(size);
-		//leon->orig_block_size->push_back(fasta_size);
-		//leon->seq_per_block->push_back(j);
-		fout.close();
-		leon1->executeCompression(block_count, temp_file.c_str());
 		string fasta_value, fastq_value;
 		fasta_value = formatSize(fasta_size);
 		fastq_value = formatSize(size);
-                string filename = leon->_inputFilename+"_"+to_string(block_count)+".leon";
-                if(lsetxattr(filename.c_str(), FASTA_SIZE_ATTR, fasta_value.c_str(), SIZE_LEN, 0)==-1)
-                        StackFS_trace("Error in setxattr");
-		if(lsetxattr(filename.c_str(), FASTQ_SIZE_ATTR, fastq_value.c_str(), SIZE_LEN, 0)==-1)
-                        StackFS_trace("Error in setxattr");
+		string FASTA_attr_name(FASTA_SIZE_ATTR);
+		FASTA_attr_name += "_";
+		FASTA_attr_name += to_string(block_count);
+		string FASTQ_attr_name(FASTQ_SIZE_ATTR);
+		FASTQ_attr_name += "_";
+		FASTQ_attr_name += to_string(block_count);
+                if(lsetxattr(filename.c_str(), FASTA_attr_name.c_str(), fasta_value.c_str(), SIZE_LEN, 0)==-1)
+                        StackFS_trace("Error in setxattr %d", errno);
+		if(lsetxattr(filename.c_str(), FASTQ_attr_name.c_str(), fastq_value.c_str(), SIZE_LEN, 0)==-1)
+                        StackFS_trace("Error in setxattr %d", errno);
 		block_count++;
 	}
-	//leon->saveConfig();
+	string block = formatSize(block_count);
+	if(lsetxattr(filename.c_str(), BLOCK_COUNT, block.c_str(), SIZE_LEN, 0)==-1)
+                        StackFS_trace("Error in setxattr");
 }	
 
 //Not Used Currently
@@ -1562,7 +1542,7 @@ static void stackfs_ll_open(fuse_req_t req, fuse_ino_t ino,
 	char * point = NULL;
 	StackFS_trace("The file name: %s", name);
 	string file_name (name);
-        file_name = file_name+"_0" + EXT;
+        file_name = file_name+EXT;
 
 	char value[ATTR_SIZE];
 	int ret = lgetxattr(file_name.c_str(), ATTR, value, ATTR_SIZE);
@@ -1925,33 +1905,30 @@ static void stackfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 		char value[ATTR_SIZE];
         	int ret = lgetxattr(full_path.c_str(), ATTR, value, ATTR_SIZE);
         	string val(value);
-		if( cur_file.substr(dot).compare(".qual")==0){
-			string leonFile = full_path.substr(0, full_path.rfind("_"));
-			leonFile += "_0.leon";
+		if(dot!= string::npos && cur_file.substr(dot).compare(".qual")==0){
+			string leonFile = full_path.substr(0, full_path.rfind(".qual"));
+			leonFile += EXT;
 			ret = lgetxattr(leonFile.c_str(), ATTR, value, ATTR_SIZE);
 			if(ret >= 0)
 				val = string(value);
 		}	
 		if(dot != string::npos && cur_file.substr(dot).compare(EXT)==0 && val.find(LEON)==string::npos){
-			if(cur_file.find("_") !=  string::npos){
-				//cut the file name before the '_' in XXXX_12.leon or XXXX_0.leon
-				size_t under = cur_file.rfind("_");
-				string file_name  = cur_file.substr(0, under);
-				if(file_list.find(file_name) == file_list.end()){
-					struct stat st = {};
-					st.st_ino = d->entry->d_ino;
-					st.st_mode = d->entry->d_type << 12;
-					entsize = fuse_add_direntry(req, p, rem,
-							file_name.c_str(), &st, nextoff);
-					if (entsize > rem)
-						break;
-					p += entsize;
-					rem -= entsize;
-					file_list.insert(file_name);
-				}
+			size_t under = cur_file.rfind(EXT);
+			string file_name  = cur_file.substr(0, under);
+			if(file_list.find(file_name) == file_list.end()){
+				struct stat st = {};
+				st.st_ino = d->entry->d_ino;
+				st.st_mode = d->entry->d_type << 12;
+				entsize = fuse_add_direntry(req, p, rem,
+						file_name.c_str(), &st, nextoff);
+				if (entsize > rem)
+					break;
+				p += entsize;
+				rem -= entsize;
+				file_list.insert(file_name);
 			}
 		}else if((dot == string::npos || cur_file.substr(dot).compare(".qual")!=0 ||
-			 val.find(LEON)!=string::npos) && file_list.find(cur_file)==file_list.end()){
+					val.find(LEON)!=string::npos) && file_list.find(cur_file)==file_list.end()){
 			struct stat st = {};
 			st.st_ino = d->entry->d_ino;
 			st.st_mode = d->entry->d_type << 12;
@@ -2012,72 +1989,105 @@ static void create_file(char* name){
 	StackFS_trace("File created and compressed on name : %s ", name);
 }
 
+int jobNumber = 0;
+class myjob : public job{
+public:
+	myjob(int id, fuse_req_t _req, fuse_ino_t _ino,
+		struct fuse_file_info *_fi):job(id), req(_req), ino(_ino), fi(_fi){
+	}
+	
+	void working(){
+		StackFS_trace("JOB : %d starts", jobID);
+		(void) ino;
+
+		StackFS_trace("Release called on name : %s and inode : %llu fd : %d ",
+				lo_name(req, ino), lo_inode(req, ino)->ino, fi->fh);
+		generate_start_time(req);
+		char * name = lo_name(req, ino);
+		string filename (name);
+		char * point = NULL;
+		unordered_map<string,int>::const_iterator got = created_files_map.find (name);
+		struct stat buf;
+		stat(name, &buf);
+		if(g_hash_table_lookup(file_table, name)!=NULL && g_hash_table_lookup(file_cache, name)==NULL)
+			add_to_cache(name, fi->fh);
+		else if( got != created_files_map.end())
+		{
+			char* value = (char*)malloc(ATTR_SIZE);
+			filename += ".leon";
+			if(created_files_map[name] == FASTA_F){
+				create_file(name);
+				strcpy(value, FASTA);
+				if(lsetxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
+					StackFS_trace("Error in setxattr");
+				lsetxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
+			}
+			else if(created_files_map[name] == FASTQ_F){
+				create_file(name);
+				strcpy(value, FASTQ);
+				if(lsetxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
+	                                StackFS_trace("Error in setxattr");
+				lsetxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
+			}
+			else if(created_files_map[name] == NONE_F && buf.st_size > 0){
+	                        try{
+					StackFS_trace("File name %s is set to None", name);
+					Leon* leon = new Leon();
+					int format = 0;
+					int count = 0;
+					char** args;
+					args = prep_args(name,false, false, true,count);
+					leon->run(count, args);
+					if(leon->checkLeonFile(name, format)){
+						strcpy(value, LEON);
+						if(lsetxattr(name, ATTR, value, ATTR_SIZE-1, 0)==-1)
+							StackFS_trace("Error in setxattr");
+						if(format == FASTA_F)
+							strcpy(value, FASTA);
+						else
+							strcpy(value, FASTQ);
+						lsetxattr(name, ORIG_ATTR, value, ATTR_SIZE-1, 0);
+					}
+					if(leon!=NULL)
+						delete leon;
+				}catch (...)  {
+	        			StackFS_trace("Exception Thrown Not a leon file");
+	    			}
+			}
+			if(value!=NULL){
+				free(value);
+			}
+			created_files_map.erase(name);
+		}
+		close(fi->fh);
+		generate_end_time(req);
+		populate_time(req);
+
+		fuse_reply_err(req, 0);
+
+        StackFS_trace("JOB : %d ends", jobID);
+	}
+private:
+	fuse_req_t req; 
+	fuse_ino_t ino;
+	struct fuse_file_info *fi;
+};
+
 static void stackfs_ll_release(fuse_req_t req, fuse_ino_t ino,
 		struct fuse_file_info *fi)
 {
 	(void) ino;
 
-	StackFS_trace("Release called on name : %s and inode : %llu fd : %d ",
-			lo_name(req, ino), lo_inode(req, ino)->ino, fi->fh);
-	generate_start_time(req);
-	char * name = lo_name(req, ino);
-	string filename (name);
-	char * point = NULL;
-	unordered_map<string,int>::const_iterator got = created_files_map.find (name);
-	if(g_hash_table_lookup(file_table, name)!=NULL && g_hash_table_lookup(file_cache, name)==NULL)
-		add_to_cache(name, fi->fh);
-	else if( got != created_files_map.end())
-	{
-		char* value = (char*)malloc(ATTR_SIZE);
-		filename += "_0.leon";
-		if(created_files_map[name] == FASTA_F){
-			create_file(name);
-			strcpy(value, FASTA);
-			if(lsetxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
-				StackFS_trace("Error in setxattr");
-			lsetxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
-		}
-		else if(created_files_map[name] == FASTQ_F){
-			create_file(name);
-			strcpy(value, FASTQ);
-			if(lsetxattr(filename.c_str(), ATTR, value, ATTR_SIZE, 0)==-1)
-                                StackFS_trace("Error in setxattr");
-			lsetxattr(filename.c_str(), ORIG_ATTR, value, ATTR_SIZE, 0);
-		}
-		else if(created_files_map[name] == NONE_F){
-                        try{
-				StackFS_trace("File name %s is set to None", name);
-				Leon* leon = new Leon();
-				int format = 0;
-				int count = 0;
-				char** args;
-				args = prep_args(name,false, false, true,count);
-				leon->run(count, args);
-				if(leon->checkLeonFile(name, format)){
-					strcpy(value, LEON);
-					if(lsetxattr(name, ATTR, value, ATTR_SIZE-1, 0)==-1)
-						StackFS_trace("Error in setxattr");
-					if(format == FASTA_F)
-						strcpy(value, FASTA);
-					else
-						strcpy(value, FASTQ);
-					lsetxattr(name, ORIG_ATTR, value, ATTR_SIZE-1, 0);
-				}
-				delete leon;
-			}catch (...)  {
-        			StackFS_trace("Exception Thrown Not a leon file");
-    			}
-		}
-		if(value!=NULL){
-			free(value);
-		}
-		created_files_map.erase(name);
-	}
-	close(fi->fh);
-	generate_end_time(req);
-	populate_time(req);
+	StackFS_trace("Release called on name : %s and inode : %llu fd : %d ", lo_name(req, ino), lo_inode(req, ino)->ino, fi->fh);
+	
+	StackFS_trace("Job %d added to the queue", jobNumber);	
+	myjob *newJob = new myjob(jobNumber++, req, ino, fi);
+    myPool->assignJob(newJob);
 
-	fuse_reply_err(req, 0);
+
+	
+
+	// fuse_reply_err(req, 0);
 }
 
 static void stackfs_ll_releasedir(fuse_req_t req, fuse_ino_t ino,
@@ -2154,12 +2164,6 @@ static bool detect_fasta(const char* buf, size_t size){
 	return true;
 }	
 
-static bool detect_leon(const char* buf, size_t size){
-	if(buf[0]=='L')
-		return true;
-	else
-               	return false;
-}
 static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 		size_t size, off_t off, struct fuse_file_info *fi)
 {
@@ -2171,7 +2175,7 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 	bool appended = false;
 	char* fname = (char*) malloc(PATH_MAX);
         strcpy(fname, name);
-        strcat(fname, "_0.leon");
+        strcat(fname, ".leon");
 	char value[ATTR_SIZE];
         int ret = lgetxattr(fname, ATTR, value, ATTR_SIZE);
 	string val(value);
@@ -2187,8 +2191,6 @@ static void stackfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 				created_files_map[name] = FASTQ_F;
 			else if(detect_fasta(buf, size))
 				created_files_map[name] = FASTA_F;
-			//else if(detect_leon(buf, size))
-			//	created_files_map[name] = LEON_F;
 			else
 				created_files_map[name] = NONE_F;
 			StackFS_trace("File detected to be : %d", created_files_map[name]);
@@ -2244,17 +2246,15 @@ static void stackfs_ll_write_buf(fuse_req_t req, fuse_ino_t ino,
 static int remove_entry(char* fullPath, bool isFastq){
 	int res =0 ;
 	string file_name (fullPath);
-	string real_name (file_name + "_0" + EXT);
-	string qual_name (file_name + "_0" + ".qual");
+	string real_name (file_name + EXT);
+	string qual_name (file_name + ".qual");
 	int block_id = 0;
 	struct stat buffer;
-	while(stat(real_name.c_str(), &buffer) == 0) {
+	if(stat(real_name.c_str(), &buffer) == 0) {
 		res = unlink(real_name.c_str());
 		if(isFastq && stat(qual_name.c_str(), &buffer) == 0)
 			unlink(qual_name.c_str());
 		block_id++;
-		real_name = file_name + "_" + to_string(block_id) + EXT;
-		qual_name = file_name + "_" + to_string(block_id) + ".qual";
 	}
 	int count = 0;
 	/*Leon *leonRemove = new Leon();
@@ -2324,7 +2324,7 @@ static void stackfs_ll_unlink(fuse_req_t req, fuse_ino_t parent,
 	char * point = NULL;
 	StackFS_trace("The file name: %s", name);
 	string file_name(fullPath);
-        file_name = file_name+"_0" + EXT;
+        file_name = file_name+EXT;
         char value[ATTR_SIZE];
         int ret = lgetxattr(file_name.c_str(), ORIG_ATTR, value, ATTR_SIZE);
 	string val(value);
@@ -2481,10 +2481,10 @@ static void stackfs_ll_rename(fuse_req_t req, fuse_ino_t parent, const char* fro
 	char value[ATTR_SIZE];
 	string f_file_name (f_fullPath);
         string t_file_name (t_fullPath);
-	string f_real_name (f_file_name + "_0" + EXT);
-    	string t_real_name (t_file_name + "_0" + EXT);
-        string f_qual_name (f_file_name + "_0" + ".qual");
-        string t_qual_name (t_file_name + "_0" + ".qual");
+	string f_real_name (f_file_name + EXT);
+    	string t_real_name (t_file_name + EXT);
+        string f_qual_name (f_file_name + ".qual");
+        string t_qual_name (t_file_name + ".qual");
         int ret = lgetxattr(f_real_name.c_str(), ORIG_ATTR, value, ATTR_SIZE);
 	string val(value);
 	if(ret > 0 && (val.find(FASTA)!=string::npos  || val.find(FASTQ)!=string::npos  ||
@@ -2494,16 +2494,11 @@ static void stackfs_ll_rename(fuse_req_t req, fuse_ino_t parent, const char* fro
 		struct stat buffer;
 		if(val.find(FASTQ)!=string::npos)
 			isFastq = true;
-		while(stat(f_real_name.c_str(), &buffer) == 0) {
+		if(stat(f_real_name.c_str(), &buffer) == 0) {
 			res = rename(f_real_name.c_str(), t_real_name.c_str());
 			if(isFastq && stat(f_qual_name.c_str(), &buffer) == 0){
 				res = rename(f_qual_name.c_str(), t_qual_name.c_str());
 			}
-			block_id++;
-			f_real_name = f_file_name + "_" + to_string(block_id) + EXT;
-			t_real_name = t_file_name + "_" + to_string(block_id) + EXT;
-			f_qual_name = f_file_name + "_" + to_string(block_id) + ".qual";
-			t_qual_name = t_file_name + "_" + to_string(block_id) + ".qual";
 		}
 		int count = 0;
 		/*Leon *leonRemove = new Leon();
@@ -2664,7 +2659,7 @@ static void stackfs_ll_getxattr(fuse_req_t req, fuse_ino_t ino,
 		generate_start_time(req);
 		char* fname = (char*) malloc(PATH_MAX);
 	        strcpy(fname, fullPath);
-        	strcat(fname, "_0.leon");
+        	strcat(fname, ".leon");
 		if(stat(fname, &buf)==0)
 			res = lgetxattr(fname, name, value, size);
 		else
@@ -2681,7 +2676,7 @@ static void stackfs_ll_getxattr(fuse_req_t req, fuse_ino_t ino,
 		generate_start_time(req);
 		char* fname = (char*) malloc(PATH_MAX);
                 strcpy(fname, fullPath);
-                strcat(fname, "_0.leon");
+                strcat(fname, ".leon");
                 if(stat(fname, &buf)==0)
                         res = lgetxattr(fname, name, NULL, 0);
                 else
@@ -2704,7 +2699,7 @@ static void stackfs_ll_setxattr(fuse_req_t req, fuse_ino_t ino,
 	generate_start_time(req);
 	char* fname = (char*) malloc(PATH_MAX);
        	strcpy(fname, fullPath);
-        strcat(fname, "_0.leon");
+        strcat(fname, ".leon");
 	StackFS_trace("Function Trace : Setxattr %s", fname);
        	if(stat(fname, &buf)==0){
 		res = -1;
@@ -2777,13 +2772,14 @@ static void stackfs_ll_setxattr(fuse_req_t req, fuse_ino_t ino,
 					pthread_spin_unlock(&spinlock);
 				}		
 			}
-		}else if( strcmp(name, ORIG_ATTR)!=0 && strcmp(name, FASTA_SIZE_ATTR)!=0 
-							&& strcmp(name, FASTQ_SIZE_ATTR)!=0){
+		}else if( strcmp(name, ORIG_ATTR)!=0 && strncmp(name, FASTA_SIZE_ATTR, strlen(FASTA_SIZE_ATTR))!=0 
+			&& strcmp(name, BLOCK_COUNT)!=0 && strncmp(name, FASTQ_SIZE_ATTR, strlen(FASTQ_SIZE_ATTR))!=0){
 			res = lsetxattr(fname, name, value, size, flags);
 		}
 	}else{
-		if(strcmp(name, ATTR)==0 || strcmp(name, ORIG_ATTR)==0 
-			|| strcmp(name, FASTA_SIZE_ATTR)!=0 || strcmp(name, FASTQ_SIZE_ATTR)!=0 ){
+		if(strcmp(name, ATTR)==0 || strcmp(name, ORIG_ATTR)==0 ||  strcmp(name, BLOCK_COUNT)!=0
+			|| strncmp(name, FASTA_SIZE_ATTR, strlen(FASTA_SIZE_ATTR))!=0 
+			|| strncmp(name, FASTQ_SIZE_ATTR, strlen(FASTA_SIZE_ATTR))!=0 ){
 			errno = ENOTSUP;
 			res = -1;
 		}else 
@@ -3040,6 +3036,13 @@ int main(int argc, char **argv)
 	//} else
 	//	printf("No tracing\n");
 
+	if (multithreaded)
+	{
+		myPool = new thread_pool(THREADS_NUM);
+	    pthread_t threads[THREADS_NUM];
+    	myPool->initThreads(threads);
+	}
+
 	printf("Multi Threaded : %d\n", multithreaded);
 
 	if (res != -1) {
@@ -3056,9 +3059,9 @@ int main(int argc, char **argv)
 					if (resolved_statsDir)
 						fuse_session_add_statsDir(se,
 								resolved_statsDir);
-					//if (multithreaded)
-					//	err = fuse_session_loop_mt(se);
-					//else
+					if (multithreaded)
+						err = fuse_session_loop_mt(se);
+					else
 						err = fuse_session_loop(se);
 					(void) err;
 

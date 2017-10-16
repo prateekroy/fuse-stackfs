@@ -31,7 +31,7 @@
 
 #include <iostream>
 #include <gatb/gatb_core.hpp>
-#include <libconfig.h++>
+// #include <libconfig.h++>
 #include <sys/time.h>
 
 /** NOTE: we should not include namespaces here => only to make user life easier... */
@@ -202,7 +202,7 @@ class Leon : public misc::impl::Tool
 		static int bin2nt(int nt){
 			return bin2ntTab[nt];
 		}
-		void executeCompression(int block_id,const char* data);
+		void executeCompression(string data);
 		vector<string>* executeDecompression(int s_block); //pass starting and ending block number
 		bool checkLeonFile(char* file, int& format);
 	private:

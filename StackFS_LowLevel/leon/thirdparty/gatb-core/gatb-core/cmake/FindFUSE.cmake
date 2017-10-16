@@ -17,7 +17,7 @@ endif()
 
 find_library(FUSE_LIBRARIES
   NAMES ${fuse_names}
-  PATHS /usr/local/lib/fuse-library/lib)
+  PATHS /usr/local/lib/fuse-library/libd)
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(FUSE DEFAULT_MSG
